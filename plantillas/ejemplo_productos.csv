@@ -1,0 +1,15 @@
+sku,nombre,categoria,costo,precio,stock_actual,stock_minimo,stock_maximo
+BEB-001,Agua Cielo 625ml,Bebidas,0.8,1.5,750,268,1607
+BEB-002,Gaseosa Inca Kola 500ml,Bebidas,1.6,2.5,344,492,2950
+BEB-003,Cerveza Pilsen 355ml,Bebidas,2.4,4.0,712,254,1525
+ABA-001,Arroz Costeño 1kg,Abarrotes,3.2,4.5,1686,187,1124
+ABA-002,Aceite Primor 1L,Abarrotes,7.5,9.9,355,127,761
+ABA-003,Atún Florida lata,Abarrotes,3.8,5.5,1009,112,673
+ABA-004,Fideos Don Vittorio 500g,Abarrotes,2.1,3.2,504,180,1080
+LAC-001,Leche Gloria tarro,Lácteos,3.0,4.2,218,311,1868
+LAC-002,Yogurt Gloria 1L,Lácteos,4.5,6.5,305,109,654
+SNK-001,Galleta Soda Field,Snacks,0.6,1.0,905,323,1939
+SNK-002,Chocolate Sublime,Snacks,1.2,2.0,2771,308,1847
+LIM-001,Detergente Bolívar 520g,Limpieza,3.5,5.0,264,94,566
+LIM-002,Papel higiénico Suave x4,Limpieza,4.2,6.0,130,185,1110
+CUI-001,Jabón Bolívar barra,Cuidado,1.1,1.8,377,135,808
