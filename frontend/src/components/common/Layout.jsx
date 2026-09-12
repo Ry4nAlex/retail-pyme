@@ -16,7 +16,7 @@ const NAV = {
   ],
   admin: [
     { to: '/dashboard', icon: LayoutDashboard, label: 'Panel' },
-    { to: '/sales', icon: ShoppingCart, label: 'Ventas' },
+    { to: '/sales', icon: ShoppingCart, label: 'Historial de Ventas' },
     { to: '/products', icon: Package, label: 'Productos' },
     { to: '/inventory', icon: TrendingUp, label: 'Inventario' },
     { to: '/categories', icon: Tag, label: 'Categorias' },

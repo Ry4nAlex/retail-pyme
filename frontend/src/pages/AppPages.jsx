@@ -753,10 +753,6 @@ export function SalesPage() {
           </h1>
           <p className="text-slate-500 text-sm">{total} registros</p>
         </div>
-        <button onClick={openNew} className="btn-primary">
-          <Plus className="w-4 h-4" />
-          Nueva venta
-        </button>
       </div>
       <div className="table-wrapper">
         <table className="w-full">

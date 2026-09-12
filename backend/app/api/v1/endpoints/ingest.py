@@ -257,6 +257,7 @@ async def ingest_all(
     target_coverage_days: float = Form(45),
     replace_existing: bool = Form(False),
     run_ml: bool = Form(True),
+    run_walk_forward: bool = Form(False),
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_admin),
 ):
@@ -414,6 +415,7 @@ async def ingest_all(
             "overstock_threshold_days": overstock_threshold_days,
             "understock_threshold_days": understock_threshold_days,
             "target_coverage_days": target_coverage_days,
+            "run_walk_forward": run_walk_forward,
         }
         t_ml = time.perf_counter()
         out = await _ml_analyze(ventas_std, current_stock, params)

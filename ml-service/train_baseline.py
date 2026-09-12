@@ -47,6 +47,14 @@ def main():
     print(f"  RMSE         : {m['rmse']}")
     print(f"  MAPE         : {m['mape']} %")
     print(f"  Train / Test : {m['n_train']} / {m['n_test']} registros")
+    print(f"  Split        : {m['target_split']}")
+    print(f"  Estrategia   : {m['split_strategy']}")
+    print(f"  Meses Train  : {m['n_train_months']}")
+    print(f"  Meses Test   : {m['n_test_months']}")
+    print(f"  % Train      : {m['train_pct']} %")
+    print(f"  % Test       : {m['test_pct']} %")
+    print(f"  Periodo Train: " f"{m['periods']['train']['from']} -> "f"{m['periods']['train']['to']}")
+    print(f"  Periodo Test : "f"{m['periods']['test']['from']} -> "f"{m['periods']['test']['to']}")
     print("-" * 70)
     print("  Importancia de variables (top 6):")
     for k, v in list(res["feature_importance"].items())[:6]:
@@ -63,10 +71,10 @@ def main():
     print("=" * 70)
     for p in res["products"]:
         print(f"  [{p['status']:11}] {p['product_name'][:28]:28} "
-              f"stock={p['current_stock']:>4} ({p['stock_source']:8}) "
-              f"cobertura={p['days_of_coverage']:>6}d  "
-              f"exceso={p['overstock_units']:>4}u  falta={p['understock_units']:>4}u  "
-              f"tend={p['trend']}")
+            f"stock={p['current_stock']:>4} ({p['stock_source']:8}) "
+            f"cobertura={p['days_of_coverage']:>6}d  "
+            f"exceso={p['overstock_units']:>4}u  falta={p['understock_units']:>4}u  "
+            f"tend={p['trend']}")
 
 
 if __name__ == "__main__":

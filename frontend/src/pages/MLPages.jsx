@@ -59,46 +59,118 @@ const pctTxt = (v) => (v == null ? '-' : `${v}%`)
 const monthLbl = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString('es-PE', { month: 'short', year: '2-digit' })
 
 // ───────── Calidad del modelo (split 70/20/10, solo val + test) ─────────
+// function ModelQualityCard({ metrics }) {
+//   if (!metrics) return null
+//   const val = metrics.validation || {}
+//   const test = metrics.test || {}
+//   const rows = [
+//     ['R²', val.r2, test.r2, 'Varianza explicada (1 = perfecto)'],
+//     ['WAPE', pctTxt(val.wape), pctTxt(test.wape), 'Error ponderado por volumen (retail)'],
+//     ['Precisión', pctTxt(val.forecast_accuracy_pct), pctTxt(test.forecast_accuracy_pct), '100 − WAPE'],
+//     ['MAE', val.mae, test.mae, 'Error medio absoluto (u)'],
+//     ['RMSE', val.rmse, test.rmse, 'Penaliza errores grandes'],
+//     ['MAPE', pctTxt(val.mape), pctTxt(test.mape), 'Error porcentual medio'],
+//   ]
+//   const split = metrics.target_split || '70/20/10'
+//   return (
+//     <div className="card p-5">
+//       <div className="flex items-center justify-between mb-1">
+//         <h3 className="font-semibold text-slate-800 text-sm flex items-center gap-2"><Brain className="w-4 h-4 text-blue-500" />Calidad del modelo</h3>
+//         <span className="badge-blue">Split {split}</span>
+//       </div>
+//       <p className="text-xs text-slate-400 mb-4">
+//         Entrenamiento <b>{metrics.n_train}</b> ({metrics.train_pct}%) · Validación <b>{metrics.n_val}</b> ({metrics.val_pct}%) · Test <b>{metrics.n_test}</b> ({metrics.test_pct}%).
+//         Del train no se reportan resultados: solo validación y test.
+//       </p>
+//       <div className="overflow-x-auto">
+//         <table className="w-full text-sm">
+//           <thead>
+//             <tr className="text-left text-xs text-slate-400 border-b border-slate-100">
+//               <th className="py-2">Métrica</th>
+//               <th className="py-2 text-right">Validación (20%)</th>
+//               <th className="py-2 text-right">Test (10%)</th>
+//               <th className="py-2 pl-3 hidden sm:table-cell">Qué mide</th>
+//             </tr>
+//           </thead>
+//           <tbody>
+//             {rows.map(([k, v, t, desc]) => (
+//               <tr key={k} className="border-b border-slate-50">
+//                 <td className="py-2 font-medium text-slate-700">{k}</td>
+//                 <td className="py-2 text-right tabular-nums text-slate-800">{v ?? '-'}</td>
+//                 <td className="py-2 text-right tabular-nums font-semibold text-slate-900">{t ?? '-'}</td>
+//                 <td className="py-2 pl-3 text-xs text-slate-400 hidden sm:table-cell">{desc}</td>
+//               </tr>
+//             ))}
+//           </tbody>
+//         </table>
+//       </div>
+//     </div>
+//   )
+// }
+
+// ───────── Calidad del modelo: split temporal 80/20 ─────────
 function ModelQualityCard({ metrics }) {
   if (!metrics) return null
-  const val = metrics.validation || {}
-  const test = metrics.test || {}
+
+  const test = metrics.test || metrics
+
   const rows = [
-    ['R²', val.r2, test.r2, 'Varianza explicada (1 = perfecto)'],
-    ['WAPE', pctTxt(val.wape), pctTxt(test.wape), 'Error ponderado por volumen (retail)'],
-    ['Precisión', pctTxt(val.forecast_accuracy_pct), pctTxt(test.forecast_accuracy_pct), '100 − WAPE'],
-    ['MAE', val.mae, test.mae, 'Error medio absoluto (u)'],
-    ['RMSE', val.rmse, test.rmse, 'Penaliza errores grandes'],
-    ['MAPE', pctTxt(val.mape), pctTxt(test.mape), 'Error porcentual medio'],
+    ['R²', test.r2, 'Varianza explicada (1 = perfecto)'],
+    ['WAPE', pctTxt(test.wape), 'Error ponderado por volumen'],
+    ['Precisión', pctTxt(test.forecast_accuracy_pct), '100 − WAPE'],
+    ['MAE', test.mae, 'Error medio absoluto (u)'],
+    ['RMSE', test.rmse, 'Penaliza errores grandes'],
+    ['MAPE', pctTxt(test.mape), 'Error porcentual medio'],
   ]
-  const split = metrics.target_split || '70/20/10'
+
+  const split = metrics.target_split || '80/20'
+
   return (
     <div className="card p-5">
       <div className="flex items-center justify-between mb-1">
-        <h3 className="font-semibold text-slate-800 text-sm flex items-center gap-2"><Brain className="w-4 h-4 text-blue-500" />Calidad del modelo</h3>
-        <span className="badge-blue">Split {split}</span>
+        <h3 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+          <Brain className="w-4 h-4 text-blue-500" />
+          Calidad del modelo
+        </h3>
+
+        <span className="badge-blue">
+          Split {split}
+        </span>
       </div>
+
       <p className="text-xs text-slate-400 mb-4">
-        Entrenamiento <b>{metrics.n_train}</b> ({metrics.train_pct}%) · Validación <b>{metrics.n_val}</b> ({metrics.val_pct}%) · Test <b>{metrics.n_test}</b> ({metrics.test_pct}%).
-        Del train no se reportan resultados: solo validación y test.
+        Entrenamiento <b>{metrics.n_train}</b> ({metrics.train_pct}%)
+        {' · '}
+        Prueba <b>{metrics.n_test}</b> ({metrics.test_pct}%).
+        El corte se realiza cronológicamente utilizando meses completos.
       </p>
+
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs text-slate-400 border-b border-slate-100">
               <th className="py-2">Métrica</th>
-              <th className="py-2 text-right">Validación (20%)</th>
-              <th className="py-2 text-right">Test (10%)</th>
-              <th className="py-2 pl-3 hidden sm:table-cell">Qué mide</th>
+              <th className="py-2 text-right">TEST(20%)</th>
+              <th className="py-2 pl-3 hidden sm:table-cell">
+                Qué mide
+              </th>
             </tr>
           </thead>
+
           <tbody>
-            {rows.map(([k, v, t, desc]) => (
+            {rows.map(([k, value, desc]) => (
               <tr key={k} className="border-b border-slate-50">
-                <td className="py-2 font-medium text-slate-700">{k}</td>
-                <td className="py-2 text-right tabular-nums text-slate-800">{v ?? '-'}</td>
-                <td className="py-2 text-right tabular-nums font-semibold text-slate-900">{t ?? '-'}</td>
-                <td className="py-2 pl-3 text-xs text-slate-400 hidden sm:table-cell">{desc}</td>
+                <td className="py-2 font-medium text-slate-700">
+                  {k}
+                </td>
+
+                <td className="py-2 text-right tabular-nums font-semibold text-slate-900">
+                  {value ?? '-'}
+                </td>
+
+                <td className="py-2 pl-3 text-xs text-slate-400 hidden sm:table-cell">
+                  {desc}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -108,36 +180,578 @@ function ModelQualityCard({ metrics }) {
   )
 }
 
-// ───────── Gráfica de validación: demanda real vs predicha ─────────
+// // ───────── Gráfica de validación: demanda real vs predicha ─────────
 function ValidationChart({ evalSeries }) {
   if (!evalSeries) return null
-  const v = evalSeries.validation || []
-  const t = evalSeries.test || []
-  if (!v.length && !t.length) return null
-  const data = [
-    ...v.map((d) => ({ label: monthLbl(d.month), real: d.real, pred: d.pred, set: 'Validación' })),
-    ...t.map((d) => ({ label: monthLbl(d.month), real: d.real, pred: d.pred, set: 'Test' })),
-  ]
-  const testFrom = t.length ? monthLbl(t[0].month) : null
-  const testTo = t.length ? monthLbl(t[t.length - 1].month) : null
+
+  const test = evalSeries.test || []
+
+  if (!test.length) return null
+
+  const data = test.map((d) => ({
+    label: monthLbl(d.month),
+    real: d.real,
+    pred: d.pred,
+  }))
+
   return (
     <div className="card p-5">
-      <h3 className="font-semibold text-slate-800 text-sm flex items-center gap-2 mb-1"><Activity className="w-4 h-4 text-emerald-500" />Validación del modelo: demanda real vs predicha</h3>
+      <h3 className="font-semibold text-slate-800 text-sm flex items-center gap-2 mb-1">
+        <Activity className="w-4 h-4 text-emerald-500" />
+        Prueba temporal: demanda real vs predicha
+      </h3>
+
       <p className="text-xs text-slate-400 mb-4">
-        Comparación mes a mes en los datos que el modelo <b>no vio al entrenar</b> (validación + test). Mientras más juntas las líneas, mejor pronostica.
+        Comparación de la demanda real y predicha en los meses
+        reservados para prueba, no utilizados durante el entrenamiento.
       </p>
+
       <ResponsiveContainer width="100%" height={280}>
-        <LineChart data={data} margin={{ top: 5, right: 14, left: -10, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-          {testFrom && <ReferenceArea x1={testFrom} x2={testTo} fill="#f59e0b" fillOpacity={0.07} label={{ value: 'Test', position: 'insideTopRight', fontSize: 10, fill: '#d97706' }} />}
-          <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#94a3b8' }} />
-          <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} />
-          <Tooltip contentStyle={{ borderRadius: 12, fontSize: 12, border: '1px solid #e2e8f0' }} />
+        <LineChart
+          data={data}
+          margin={{ top: 5, right: 14, left: -10, bottom: 0 }}
+        >
+          <CartesianGrid
+            strokeDasharray="3 3"
+            stroke="#e2e8f0"
+          />
+
+          <XAxis
+            dataKey="label"
+            tick={{ fontSize: 11, fill: '#94a3b8' }}
+          />
+
+          <YAxis
+            tick={{ fontSize: 11, fill: '#94a3b8' }}
+          />
+
+          <Tooltip
+            contentStyle={{
+              borderRadius: 12,
+              fontSize: 12,
+              border: '1px solid #e2e8f0'
+            }}
+          />
+
           <Legend wrapperStyle={{ fontSize: 12 }} />
-          <Line name="Real" type="monotone" dataKey="real" stroke="#2563eb" strokeWidth={2.5} dot={{ r: 3 }} />
-          <Line name="Predicho" type="monotone" dataKey="pred" stroke="#10b981" strokeWidth={2.5} strokeDasharray="5 4" dot={{ r: 3 }} />
+
+          <Line
+            name="Real"
+            type="monotone"
+            dataKey="real"
+            stroke="#2563eb"
+            strokeWidth={2.5}
+            dot={{ r: 3 }}
+          />
+
+          <Line
+            name="Predicho"
+            type="monotone"
+            dataKey="pred"
+            stroke="#10b981"
+            strokeWidth={2.5}
+            strokeDasharray="5 4"
+            dot={{ r: 3 }}
+          />
         </LineChart>
       </ResponsiveContainer>
+    </div>
+  )
+}
+
+function ProductPredictionChart({ products }) {
+  const [selectedProduct, setSelectedProduct] = useState('')
+
+  if (!products?.length) {
+    return null
+  }
+
+  const currentId =
+    selectedProduct || products[0].product_id
+
+  const product =
+    products.find(
+      (item) => item.product_id === currentId
+    ) || products[0]
+
+  const data = product?.series || []
+
+  return (
+    <div className="card p-5">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+
+        <div>
+          <h3 className="font-semibold text-slate-800 text-sm">
+            Demanda real vs. predicha por producto
+          </h3>
+
+          <p className="text-xs text-slate-400 mt-1">
+            Comparación sobre los meses del conjunto de prueba
+          </p>
+        </div>
+
+        <select
+          value={currentId}
+          onChange={(e) =>
+            setSelectedProduct(e.target.value)
+          }
+          className="field-input sm:w-72"
+        >
+          {products.map((item) => (
+            <option
+              key={item.product_id}
+              value={item.product_id}
+            >
+              {item.product_name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="mb-3">
+        <p className="text-sm font-medium text-slate-700">
+          {product.product_name}
+        </p>
+
+        <p className="text-xs text-slate-400">
+          {product.product_id} · {product.category}
+        </p>
+      </div>
+
+      <div className="h-72">
+        <ResponsiveContainer
+          width="100%"
+          height="100%"
+        >
+          <LineChart
+            data={data}
+            margin={{
+              top: 10,
+              right: 20,
+              left: 0,
+              bottom: 10,
+            }}
+          >
+            <CartesianGrid
+              strokeDasharray="3 3"
+              stroke="#e2e8f0"
+            />
+
+            <XAxis
+              dataKey="month"
+              tickFormatter={monthLbl}
+              tick={{
+                fontSize: 11,
+                fill: '#64748b',
+              }}
+            />
+
+            <YAxis
+              tick={{
+                fontSize: 11,
+                fill: '#64748b',
+              }}
+            />
+
+            <Tooltip
+              labelFormatter={(value) =>
+                monthLbl(value)
+              }
+            />
+
+            <Legend />
+
+            <Line
+              type="monotone"
+              dataKey="real"
+              name="Demanda real"
+              stroke="#2563eb"
+              strokeWidth={2}
+              dot={{ r: 3 }}
+            />
+
+            <Line
+              type="monotone"
+              dataKey="pred"
+              name="Demanda predicha"
+              stroke="#8b5cf6"
+              strokeWidth={2}
+              strokeDasharray="5 4"
+              dot={{ r: 3 }}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  )
+}
+
+function CategoryErrorCard({ rows }) {
+  if (!rows?.length) {
+    return null
+  }
+
+  return (
+    <div className="card p-5">
+      <div className="mb-4">
+        <h3 className="font-semibold text-slate-800 text-sm">
+          Error de predicción por categoría
+        </h3>
+
+        <p className="text-xs text-slate-400 mt-1">
+          Desempeño de XGBoost por grupo de productos
+          sobre el conjunto de prueba
+        </p>
+      </div>
+
+      <div className="overflow-x-auto rounded-xl border border-slate-200">
+        <table className="w-full text-sm">
+
+          <thead className="bg-slate-50 text-xs text-slate-500">
+            <tr>
+              <th className="px-3 py-2 text-left">
+                Categoría
+              </th>
+
+              <th className="px-3 py-2 text-right">
+                Registros
+              </th>
+
+              <th className="px-3 py-2 text-right">
+                MAE
+              </th>
+
+              <th className="px-3 py-2 text-right">
+                RMSE
+              </th>
+
+              <th className="px-3 py-2 text-right">
+                WAPE
+              </th>
+
+              <th className="px-3 py-2 text-right">
+                MAPE
+              </th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {rows.map((row) => (
+              <tr
+                key={row.category}
+                className="border-t border-slate-100"
+              >
+                <td className="px-3 py-2 font-medium text-slate-700">
+                  {row.category}
+                </td>
+
+                <td className="px-3 py-2 text-right">
+                  {row.n}
+                </td>
+
+                <td className="px-3 py-2 text-right">
+                  {row.mae ?? '-'}
+                </td>
+
+                <td className="px-3 py-2 text-right">
+                  {row.rmse ?? '-'}
+                </td>
+
+                <td className="px-3 py-2 text-right font-semibold">
+                  {row.wape != null
+                    ? `${row.wape}%`
+                    : '-'}
+                </td>
+
+                <td className="px-3 py-2 text-right">
+                  {row.mape != null
+                    ? `${row.mape}%`
+                    : '-'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+
+        </table>
+      </div>
+
+      <p className="text-xs text-slate-400 mt-3">
+        Un menor MAE, RMSE, WAPE y MAPE indica
+        menor error predictivo para la categoría.
+      </p>
+    </div>
+  )
+}
+
+function WalkForwardCard({ walkForward }) {
+  const [showDetails, setShowDetails] = useState(false)
+
+  if (!walkForward?.summary || !walkForward?.n_folds) {
+    return null
+  }
+
+  const xgb = walkForward.summary.xgboost || {}
+  const naive = walkForward.summary.naive || {}
+  const folds = walkForward.folds || []
+
+  const metricText = (metric, percent = false) => {
+    if (!metric || metric.mean == null) return '-'
+
+    const mean = percent
+      ? `${Number(metric.mean).toFixed(2)}%`
+      : Number(metric.mean).toFixed(4)
+
+    const std = percent
+      ? `${Number(metric.std ?? 0).toFixed(2)}%`
+      : Number(metric.std ?? 0).toFixed(4)
+
+    return `${mean} ± ${std}`
+  }
+
+  return (
+    <div className="card p-5">
+
+      <div className="flex items-center justify-between gap-3 mb-1">
+        <h3 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+          <Activity className="w-4 h-4 text-violet-500" />
+          Validación temporal (Walk-forward)
+        </h3>
+
+        <span className="badge-blue">
+          {walkForward.n_folds} ventanas
+        </span>
+      </div>
+
+      <p className="text-xs text-slate-400 mb-4">
+        Evaluación del modelo en múltiples periodos temporales mediante
+        ventana expansiva y predicción de un mes hacia adelante.
+      </p>
+
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+
+        <div className="rounded-xl border border-slate-200 p-3">
+          <p className="text-xs text-slate-400">
+            R² promedio
+          </p>
+
+          <p className="text-lg font-bold text-slate-900">
+            {metricText(xgb.r2)}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 p-3">
+          <p className="text-xs text-slate-400">
+            WAPE promedio
+          </p>
+
+          <p className="text-lg font-bold text-slate-900">
+            {metricText(xgb.wape, true)}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 p-3">
+          <p className="text-xs text-slate-400">
+            MAE promedio
+          </p>
+
+          <p className="text-lg font-bold text-slate-900">
+            {metricText(xgb.mae)}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 p-3">
+          <p className="text-xs text-slate-400">
+            RMSE promedio
+          </p>
+
+          <p className="text-lg font-bold text-slate-900">
+            {metricText(xgb.rmse)}
+          </p>
+        </div>
+
+      </div>
+
+      <div className="mt-5 overflow-x-auto rounded-xl border border-slate-200">
+        <table className="w-full text-sm">
+
+          <thead className="bg-slate-50 text-xs text-slate-500">
+            <tr>
+              <th className="px-3 py-2 text-left">
+                Métrica
+              </th>
+
+              <th className="px-3 py-2 text-right">
+                XGBoost
+              </th>
+
+              <th className="px-3 py-2 text-right">
+                Naive t-1
+              </th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+            <tr className="border-t border-slate-100">
+              <td className="px-3 py-2 font-medium">
+                R²
+              </td>
+              <td className="px-3 py-2 text-right font-semibold">
+                {metricText(xgb.r2)}
+              </td>
+              <td className="px-3 py-2 text-right">
+                {metricText(naive.r2)}
+              </td>
+            </tr>
+
+            <tr className="border-t border-slate-100">
+              <td className="px-3 py-2 font-medium">
+                WAPE
+              </td>
+              <td className="px-3 py-2 text-right font-semibold">
+                {metricText(xgb.wape, true)}
+              </td>
+              <td className="px-3 py-2 text-right">
+                {metricText(naive.wape, true)}
+              </td>
+            </tr>
+
+            <tr className="border-t border-slate-100">
+              <td className="px-3 py-2 font-medium">
+                MAE
+              </td>
+              <td className="px-3 py-2 text-right font-semibold">
+                {metricText(xgb.mae)}
+              </td>
+              <td className="px-3 py-2 text-right">
+                {metricText(naive.mae)}
+              </td>
+            </tr>
+
+            <tr className="border-t border-slate-100">
+              <td className="px-3 py-2 font-medium">
+                RMSE
+              </td>
+              <td className="px-3 py-2 text-right font-semibold">
+                {metricText(xgb.rmse)}
+              </td>
+              <td className="px-3 py-2 text-right">
+                {metricText(naive.rmse)}
+              </td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => setShowDetails((prev) => !prev)}
+        className="mt-4 text-xs font-medium text-azure-600 hover:text-azure-700"
+      >
+        {showDetails
+          ? 'Ocultar detalle de ventanas'
+          : 'Ver detalle de ventanas'}
+      </button>
+
+      {showDetails && (
+
+        <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200">
+
+          <table className="w-full text-sm">
+
+            <thead className="bg-slate-50 text-xs text-slate-500">
+              <tr>
+                <th className="px-3 py-2">
+                  Fold
+                </th>
+
+                <th className="px-3 py-2">
+                  Mes prueba
+                </th>
+
+                <th className="px-3 py-2 text-right">
+                  R² XGB
+                </th>
+
+                <th className="px-3 py-2 text-right">
+                  R² Naive
+                </th>
+
+                <th className="px-3 py-2 text-right">
+                  WAPE XGB
+                </th>
+
+                <th className="px-3 py-2 text-right">
+                  WAPE Naive
+                </th>
+
+                <th className="px-3 py-2 text-right">
+                  MAE XGB
+                </th>
+
+                <th className="px-3 py-2 text-right">
+                  RMSE XGB
+                </th>
+              </tr>
+            </thead>
+
+            <tbody>
+
+              {folds.map((fold) => (
+
+                <tr
+                  key={fold.fold}
+                  className="border-t border-slate-100"
+                >
+
+                  <td className="px-3 py-2 text-center">
+                    {fold.fold}
+                  </td>
+
+                  <td className="px-3 py-2">
+                    {monthLbl(fold.test_month)}
+                  </td>
+
+                  <td className="px-3 py-2 text-right">
+                    {fold.xgboost?.r2 ?? '-'}
+                  </td>
+
+                  <td className="px-3 py-2 text-right">
+                    {fold.naive?.r2 ?? '-'}
+                  </td>
+
+                  <td className="px-3 py-2 text-right">
+                    {fold.xgboost?.wape != null
+                      ? `${fold.xgboost.wape}%`
+                      : '-'}
+                  </td>
+
+                  <td className="px-3 py-2 text-right">
+                    {fold.naive?.wape != null
+                      ? `${fold.naive.wape}%`
+                      : '-'}
+                  </td>
+
+                  <td className="px-3 py-2 text-right">
+                    {fold.xgboost?.mae ?? '-'}
+                  </td>
+
+                  <td className="px-3 py-2 text-right">
+                    {fold.xgboost?.rmse ?? '-'}
+                  </td>
+
+                </tr>
+
+              ))}
+
+            </tbody>
+          </table>
+
+        </div>
+
+      )}
+
     </div>
   )
 }
@@ -331,6 +945,27 @@ export function PredictionsPage() {
               <ValidationChart evalSeries={metrics?.eval_series} />
             </div>
           )}
+          
+          {(
+            metrics?.eval_series_by_product?.length > 0 ||
+            metrics?.error_by_category?.length > 0
+          ) && (
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+
+              <ProductPredictionChart
+                products={metrics?.eval_series_by_product}
+              />
+
+              <CategoryErrorCard
+                rows={metrics?.error_by_category}
+              />
+
+            </div>
+          )}
+
+          <WalkForwardCard
+          walkForward={metrics?.walk_forward}
+          />
 
           <CloudMetricsCard cloud={cloudMerged} onRefresh={refreshCloud} refreshing={refreshingCloud} />
 

@@ -10,6 +10,7 @@ export default defineConfig({
     allowedHosts: [
       "unfluorescent-robt-unidly.ngrok-free.dev",
       "unfluorescent-robt-unidly.ngrok-free.app",
+      "vegan-buddhism-storage.ngrok-free.dev",
     ],
     proxy: {
       "/api": {
