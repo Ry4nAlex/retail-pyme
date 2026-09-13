@@ -22,6 +22,18 @@ const TREND = {
   estable:     { label: 'Estable',     icon: Minus,        cls: 'text-slate-400' },
 }
 const money = (v) => (v == null ? '-' : `S/ ${Number(v).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
+const formatDateTimePE = (value) => {
+  if (!value) return '-'
+
+  const hasTimezone = /Z$|[+-]\d{2}:\d{2}$/.test(value)
+  const date = new Date(hasTimezone ? value : `${value}Z`)
+
+  if (Number.isNaN(date.getTime())) return '-'
+
+  return date.toLocaleString('es-PE', {
+    timeZone: 'America/Lima',
+  })
+}
 const monthLabel = (iso) => {
   const d = new Date(iso + 'T00:00:00')
   return d.toLocaleDateString('es-PE', { month: 'short', year: '2-digit' })
@@ -625,7 +637,7 @@ export default function StockAnalysisPage() {
             ) : analyses.map((a) => (
               <tr key={a.id} className="table-row cursor-pointer" onClick={() => openAnalysis(a.id)}>
                 <td className="table-td text-sm font-medium text-slate-700">{a.source_filename}</td>
-                <td className="table-td text-xs text-slate-400">{new Date(a.created_at).toLocaleString('es-PE')}</td>
+                <td className="table-td text-xs text-slate-400">{formatDateTimePE(a.created_at)}</td>
                 <td className="table-td text-sm text-slate-600">{a.total_products}</td>
                 <td className="table-td"><span className={a.overstock_count > 0 ? 'badge-red' : 'badge-slate'}>{a.overstock_count}</span></td>
                 <td className="table-td text-sm text-slate-600">{a.metrics?.target_split || '80/20'}</td>
