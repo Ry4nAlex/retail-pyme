@@ -1794,11 +1794,21 @@ export function UsersPage() {
     setModal(true);
   };
   const save = async () => {
-    setSaving(true);
-    try {
-      const payload = { ...form };
-      if (editing && !payload.password) delete payload.password;
-      editing ? await usersService.update(editing, payload) : await usersService.create(payload);
+  setSaving(true);
+  try {
+    const payload = { ...form };
+
+    if (editing && !isSuperAdmin) {
+      delete payload.company_id;
+    }
+
+    if (editing && !payload.password) {
+      delete payload.password;
+    }
+
+    editing
+      ? await usersService.update(editing, payload)
+      : await usersService.create(payload);
       toast.success(editing ? "Usuario actualizado" : "Usuario creado");
       setModal(false);
       load();
