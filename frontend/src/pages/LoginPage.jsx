@@ -33,7 +33,9 @@ export default function LoginPage() {
     if (result.ok) {
       navigate('/dashboard')
     } else {
-      toast.error(result.error)
+      toast.error(result.error, {
+  duration: 7000,
+})
     }
   }
 
