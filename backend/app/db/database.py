@@ -6,8 +6,16 @@ engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DEBUG,
     pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20,
+
+    # Supabase Session Pooler permite 15 conexiones.
+    # Dejamos margen para conexiones administrativas y otros servicios.
+    pool_size=5,
+    max_overflow=5,
+
+    # Si las 10 conexiones están ocupadas, las peticiones esperan
+    # una conexión libre en lugar de intentar abrir conexiones
+    # ilimitadamente contra Supabase.
+    pool_timeout=30,
 )
 
 AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
