@@ -255,7 +255,7 @@ async def create_user(data: UserCreate, db: AsyncSession = Depends(get_db), curr
             raise HTTPException(403, "Only super administrators can create this role")
     ex = await db.execute(select(User).where(User.email == data.email))
     if ex.scalar_one_or_none():
-        raise HTTPException(400, "Email already registered")
+        raise HTTPException(400, "El correo electronico ya existe")
     company = await db.execute(select(Company).where(Company.id == data.company_id, Company.active == True))
     if not company.scalar_one_or_none():
         raise HTTPException(404, "Company not found")
@@ -292,7 +292,7 @@ async def update_user(user_id: UUID, data: UserUpdate, db: AsyncSession = Depend
     if "email" in values and values["email"] != u.email:
         ex = await db.execute(select(User).where(User.email == values["email"]))
         if ex.scalar_one_or_none():
-            raise HTTPException(400, "Email already registered")
+            raise HTTPException(400, "El correo electronico ya existe")
     for k, v in values.items():
         if k == "password":
             if len(v) < 8:

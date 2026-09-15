@@ -1,0 +1,30 @@
+{
+  "test": "RetailPyme - tiempo de respuesta cliente-servidor",
+  "endpoint": "/api/v1/ml/analyses",
+  "concurrent_users": 50,
+  "duration": "15s",
+  "successful_response_time_ms": {
+    "average": 2680.506332885908,
+    "minimum": 769.9649,
+    "p50": 2702.05695,
+    "p95": 4688.9355799999985,
+    "p99": 5211.600958999963,
+    "maximum": 6790.8945
+  },
+  "throughput_requests_per_second": 16.911396997331526,
+  "total_requests": 298,
+  "error_rate_pct": 0,
+  "status_counts": {
+    "200": 298,
+    "400": 0,
+    "401": 0,
+    "403": 0,
+    "429": 0,
+    "500": 0,
+    "502": 0,
+    "503": 0,
+    "504": 0,
+    "network_errors": 0,
+    "other": 0
+  }
+}
