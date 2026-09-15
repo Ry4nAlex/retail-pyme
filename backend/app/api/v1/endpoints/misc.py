@@ -247,18 +247,18 @@ async def list_users(db: AsyncSession = Depends(get_db), current_user: dict = De
 async def create_user(data: UserCreate, db: AsyncSession = Depends(get_db), current_user: dict = Depends(require_admin)):
     _validate_user_role(data.role)
     if len(data.password) < 8:
-        raise HTTPException(400, "Password must be at least 8 characters")
+        raise HTTPException(400, "La contraseña debe contener minimo 8 caracteres")
     if current_user["role"] != "superadmin":
         if str(data.company_id) != str(current_user["company_id"]):
-            raise HTTPException(403, "Cannot create users for another company")
+            raise HTTPException(403, "No se pueden crear usuarios para otra empresa")
         if data.role == "superadmin":
-            raise HTTPException(403, "Only super administrators can create this role")
+            raise HTTPException(403, "Solo super administradores pueden crear este rol")
     ex = await db.execute(select(User).where(User.email == data.email))
     if ex.scalar_one_or_none():
-        raise HTTPException(400, "El correo electronico ya existe")
+        raise HTTPException(400, "El correo ya esta registrado")
     company = await db.execute(select(Company).where(Company.id == data.company_id, Company.active == True))
     if not company.scalar_one_or_none():
-        raise HTTPException(404, "Company not found")
+        raise HTTPException(404, "Empresa no encontrada")
     u = User(
         company_id=data.company_id,
         name=data.name, email=data.email,
@@ -282,21 +282,21 @@ async def update_user(user_id: UUID, data: UserUpdate, db: AsyncSession = Depend
     if "role" in values:
         _validate_user_role(values["role"])
         if values["role"] == "superadmin" and current_user["role"] != "superadmin":
-            raise HTTPException(403, "Only super administrators can assign this role")
+            raise HTTPException(403, "Solo super administradores pueden crear este rol")
     if "company_id" in values:
         if current_user["role"] != "superadmin":
-            raise HTTPException(403, "Only super administrators can move users between companies")
+            raise HTTPException(403, "Solo super administradores pueden mover usuarios entre empresas")
         company = await db.execute(select(Company).where(Company.id == values["company_id"], Company.active == True))
         if not company.scalar_one_or_none():
-            raise HTTPException(404, "Company not found")
+            raise HTTPException(404, "Empresa no encontrada")
     if "email" in values and values["email"] != u.email:
         ex = await db.execute(select(User).where(User.email == values["email"]))
         if ex.scalar_one_or_none():
-            raise HTTPException(400, "El correo electronico ya existe")
+            raise HTTPException(400, "El correo ya esta registrado")
     for k, v in values.items():
         if k == "password":
             if len(v) < 8:
-                raise HTTPException(400, "Password must be at least 8 characters")
+                raise HTTPException(400, "La contraseña debe tener minimo 8 caracteres")
             u.password_hash = hash_password(v)
         else:
             setattr(u, k, v)
