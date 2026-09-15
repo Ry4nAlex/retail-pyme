@@ -17,29 +17,33 @@ from datetime import datetime
 import httpx
 
 
-async def probe_ml_availability(base_url: str, n: int = 5, timeout: float = 4.0) -> dict:
-    """Hace N health-checks al microservicio ML y mide disponibilidad + latencia."""
+async def probe_ml_availability(
+    base_url: str,
+    n: int = 5,
+    timeout: float = 4.0,
+) -> dict:
+    """Verifica disponibilidad puntual del microservicio ML."""
     url = f"{base_url.rstrip('/')}/health"
+
     ok = 0
-    latencies = []
+
     async with httpx.AsyncClient(timeout=timeout) as client:
         for _ in range(max(1, n)):
-            t = time.perf_counter()
             try:
                 r = await client.get(url)
-                dt = (time.perf_counter() - t) * 1000
+
                 if r.status_code == 200:
                     ok += 1
-                    latencies.append(dt)
+
             except Exception:
                 pass
+
     checks = max(1, n)
-    avg_latency = round(sum(latencies) / len(latencies), 1) if latencies else None
+
     return {
         "availability_pct": round(ok / checks * 100, 1),
         "availability_checks": checks,
         "availability_ok": ok,
-        "api_latency_ms": avg_latency,
     }
 
 
@@ -93,9 +97,61 @@ def build_cloud_metrics(*, records: int, total_ms: float, backend_stages: list,
         "total_processing_s": round(total_ms / 1000, 2) if total_ms else None,
         "ml_total_ms": ml_timings.get("total_ml_ms"),
         "throughput_rps": throughput,
-        "api_latency_ms": availability.get("api_latency_ms"),
         "availability_pct": availability.get("availability_pct"),
         "availability_checks": availability.get("availability_checks"),
         "stages_ms": stages,
         "measured_at": datetime.utcnow().isoformat() + "Z",
     }
+
+API_PERFORMANCE_BENCHMARK = {
+    "tool": "k6",
+    "endpoint": "/api/v1/ml/analyses",
+    "duration_seconds": 60,
+    "test_date": "2026-09-15",
+    "description": (
+        "Prueba externa cliente-servidor sobre la API pública "
+        "desplegada en Railway."
+    ),
+    "scenarios": [
+        {
+            "vus": 1,
+            "p50_ms": 633.62,
+            "p95_ms": 799.42,
+            "p99_ms": 1094.43,
+            "requests_per_second": 1.50,
+            "error_pct": 0.0,
+            "requests": 91,
+        },
+        {
+            "vus": 10,
+            "p50_ms": 654.74,
+            "p95_ms": 1339.30,
+            "p99_ms": 1923.14,
+            "requests_per_second": 13.02,
+            "error_pct": 0.0,
+            "requests": 788,
+        },
+        {
+            "vus": 25,
+            "p50_ms": 1366.41,
+            "p95_ms": 2252.13,
+            "p99_ms": 3890.79,
+            "requests_per_second": 17.13,
+            "error_pct": 0.0,
+            "requests": 1046,
+        },
+        {
+            "vus": 50,
+            "p50_ms": 2734.46,
+            "p95_ms": 5072.96,
+            "p99_ms": 8258.53,
+            "requests_per_second": 17.19,
+            "error_pct": 0.0,
+            "requests": 1080,
+        },
+    ],
+}
+
+
+def get_api_performance_benchmark() -> dict:
+    return API_PERFORMANCE_BENCHMARK

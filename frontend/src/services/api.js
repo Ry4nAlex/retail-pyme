@@ -122,4 +122,5 @@ export const mlService = {
   deleteAnalysis: (id) => api.delete(`/ml/analyses/${id}`),
   mlHealth: () => api.get("/ml/health-ml"),
   cloudMetricsLive: () => api.get("/ml/cloud-metrics/live"),
+  cloudBenchmark: () =>api.get("/ml/cloud-metrics/benchmark"),
 };

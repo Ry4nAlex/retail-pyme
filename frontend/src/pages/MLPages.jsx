@@ -885,14 +885,48 @@ function WalkForwardCard({ walkForward }) {
 }
 
 // ───────── Métricas operativas cloud ─────────
-function CloudMetricsCard({ cloud, onRefresh, refreshing }) {
-  if (!cloud) return null
+function CloudMetricsCard({cloud,benchmark,onRefresh,refreshing,}) {
+    if (!cloud) return null
+    const baseline = benchmark?.scenarios?.find((row) => row.vus === 1)
   const big = [
-    { icon: Timer, color: 'text-blue-500', label: 'Tiempo total de procesamiento', value: fmtMs(cloud.total_processing_ms), sub: `${cloud.records_processed?.toLocaleString('es-PE') || '-'} registros` },
-    { icon: Gauge, color: 'text-violet-500', label: 'Latencia promedio API', value: fmtMs(cloud.api_latency_ms), sub: `${cloud.availability_checks || 0} mediciones` },
-    { icon: Zap, color: 'text-amber-500', label: 'Throughput', value: cloud.throughput_rps != null ? `${cloud.throughput_rps.toLocaleString('es-PE')}` : '-', sub: 'registros / segundo' },
-    { icon: Server, color: 'text-emerald-500', label: 'Disponibilidad en pruebas', value: cloud.availability_pct != null ? `${cloud.availability_pct}%` : '-', sub: 'health-checks OK' },
-  ]
+  {
+    icon: Timer,
+    color: 'text-blue-500',
+    label: 'Tiempo total de procesamiento',
+    value: fmtMs(cloud.total_processing_ms),
+    sub: `${cloud.records_processed?.toLocaleString('es-PE') || '-'} registros`,
+  },
+
+  {
+    icon: Gauge,
+    color: 'text-violet-500',
+    label: 'Tiempo de respuesta API (p95)',
+    value: fmtMs(baseline?.p95_ms),
+    sub: '1 usuario · prueba de 60 s',
+  },
+
+  {
+    icon: Zap,
+    color: 'text-amber-500',
+    label: 'Throughput de procesamiento',
+    value:
+      cloud.throughput_rps != null
+        ? cloud.throughput_rps.toLocaleString('es-PE')
+        : '-',
+    sub: 'registros / segundo',
+  },
+
+  {
+    icon: Server,
+    color: 'text-emerald-500',
+    label: 'Disponibilidad en pruebas',
+    value:
+      cloud.availability_pct != null
+        ? `${cloud.availability_pct}%`
+        : '-',
+    sub: 'health-checks OK',
+  },
+]
   const stages = (cloud.stages_ms || []).map((s) => ({ name: s.stage, ms: s.ms }))
   const palette = ['#3b82f6', '#6366f1', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444']
   return (
@@ -901,7 +935,10 @@ function CloudMetricsCard({ cloud, onRefresh, refreshing }) {
         <h3 className="font-semibold text-slate-800 text-sm flex items-center gap-2"><Activity className="w-4 h-4 text-violet-500" />Métricas operativas cloud</h3>
         {onRefresh && (
           <button onClick={onRefresh} disabled={refreshing} className="text-xs flex items-center gap-1 text-slate-500 hover:text-slate-800 disabled:opacity-50">
-            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />Medir en vivo
+            <RefreshCw
+  className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`}
+/>
+Verificar disponibilidad
           </button>
         )}
       </div>
@@ -918,6 +955,90 @@ function CloudMetricsCard({ cloud, onRefresh, refreshing }) {
           </div>
         ))}
       </div>
+      {benchmark?.scenarios?.length > 0 && (
+  <div className="mb-5">
+
+    <div className="flex items-center justify-between mb-2">
+      <div>
+        <p className="text-xs font-medium text-slate-600">
+          Prueba de rendimiento cliente-servidor
+        </p>
+
+        <p className="text-[11px] text-slate-400">
+          k6 · 60 segundos por escenario · API desplegada
+        </p>
+      </div>
+    </div>
+
+    <div className="overflow-x-auto rounded-xl border border-slate-200">
+      <table className="w-full text-sm">
+
+        <thead className="bg-slate-50 text-xs text-slate-500">
+          <tr>
+            <th className="px-3 py-2 text-right">
+              Usuarios
+            </th>
+
+            <th className="px-3 py-2 text-right">
+              p50
+            </th>
+
+            <th className="px-3 py-2 text-right">
+              p95
+            </th>
+
+            <th className="px-3 py-2 text-right">
+              p99
+            </th>
+
+            <th className="px-3 py-2 text-right">
+              req/s
+            </th>
+
+            <th className="px-3 py-2 text-right">
+              Error
+            </th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {benchmark.scenarios.map((row) => (
+            <tr
+              key={row.vus}
+              className="border-t border-slate-100"
+            >
+              <td className="px-3 py-2 text-right font-medium">
+                {row.vus}
+              </td>
+
+              <td className="px-3 py-2 text-right">
+                {fmtMs(row.p50_ms)}
+              </td>
+
+              <td className="px-3 py-2 text-right font-semibold">
+                {fmtMs(row.p95_ms)}
+              </td>
+
+              <td className="px-3 py-2 text-right">
+                {fmtMs(row.p99_ms)}
+              </td>
+
+              <td className="px-3 py-2 text-right">
+                {row.requests_per_second}
+              </td>
+
+              <td className="px-3 py-2 text-right">
+                {row.error_pct}%
+              </td>
+            </tr>
+          ))}
+        </tbody>
+
+      </table>
+    </div>
+
+  </div>
+)}
       {stages.length > 0 && (
         <>
           <p className="text-xs font-medium text-slate-500 mb-2">Tiempo por etapa (ms)</p>
@@ -947,6 +1068,7 @@ export function PredictionsPage() {
   const [selectedProductId, setSelectedProductId] = useState('')
   const [loading, setLoading] = useState(true)
   const [liveCloud, setLiveCloud] = useState(null)
+  const [cloudBenchmark, setCloudBenchmark] = useState(null)
   const [refreshingCloud, setRefreshingCloud] = useState(false)
 
   const refreshCloud = async () => {
@@ -954,7 +1076,7 @@ export function PredictionsPage() {
     try {
       const r = await mlService.cloudMetricsLive()
       setLiveCloud(r.data)
-      toast.success('Latencia y disponibilidad actualizadas')
+      toast.success('Disponibilidad actualizada')
     } catch {
       toast.error('No se pudo medir el servicio en vivo')
     } finally {
@@ -975,22 +1097,38 @@ export function PredictionsPage() {
   }
 
   useEffect(() => {
-    mlService.listAnalyses()
-      .then((r) => {
-        setAnalyses(r.data)
-        if (r.data[0]) openAnalysis(r.data[0].id)
-      })
-      .catch(() => toast.error('No se pudieron cargar las predicciones'))
-      .finally(() => setLoading(false))
-  }, [])
+  mlService.listAnalyses()
+    .then((r) => {
+      setAnalyses(r.data)
+
+      if (r.data[0]) {
+        openAnalysis(r.data[0].id)
+      }
+    })
+    .catch(() => {
+      toast.error('No se pudieron cargar las predicciones')
+    })
+    .finally(() => {
+      setLoading(false)
+    })
+
+  mlService.cloudBenchmark()
+    .then((r) => {
+      setCloudBenchmark(r.data)
+    })
+    .catch(() => {
+      console.error(
+        'No se pudo cargar el benchmark cloud'
+      )
+    })
+}, [])
 
   const summary = result?.summary
   const metrics = result?.metrics
   const cloud = result?.cloud_metrics
-  // Si se midió en vivo, sobreescribe latencia/disponibilidad sobre las del análisis guardado
+  // Si se verificó en vivo, actualiza la disponibilidad del análisis guardado
   const cloudMerged = cloud ? {
     ...cloud,
-    api_latency_ms: liveCloud?.api_latency_ms ?? cloud.api_latency_ms,
     availability_pct: liveCloud?.availability_pct ?? cloud.availability_pct,
     availability_checks: liveCloud?.availability_checks ?? cloud.availability_checks,
     measured_at: liveCloud?.measured_at ?? cloud.measured_at,
@@ -1101,6 +1239,7 @@ export function PredictionsPage() {
 
 <CloudMetricsCard
   cloud={cloudMerged}
+  benchmark={cloudBenchmark}
   onRefresh={refreshCloud}
   refreshing={refreshingCloud}
 />

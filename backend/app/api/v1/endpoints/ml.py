@@ -18,8 +18,7 @@ from app.schemas.schemas import (
 )
 from app.core.security import get_current_user, require_admin
 from app.core.config import settings
-from app.services.cloud_metrics import probe_ml_availability, build_cloud_metrics
-
+from app.services.cloud_metrics import (probe_ml_availability,build_cloud_metrics,get_api_performance_benchmark,)
 router = APIRouter(prefix="/ml", tags=["Machine Learning"])
 
 ALLOWED_EXTENSIONS = {".csv", ".xlsx", ".xls"}
@@ -458,15 +457,31 @@ async def ml_service_health():
 
 @router.get("/cloud-metrics/live")
 async def cloud_metrics_live():
-    """Mide en vivo latencia y disponibilidad del microservicio ML (5 health-checks)."""
-    av = await probe_ml_availability(settings.ML_SERVICE_URL, n=5)
+    """Verifica disponibilidad puntual del microservicio ML."""
+    av = await probe_ml_availability(
+        settings.ML_SERVICE_URL,
+        n=5,
+    )
+
     return {
         "ml_service_url": settings.ML_SERVICE_URL,
-        "api_latency_ms": av.get("api_latency_ms"),
         "availability_pct": av.get("availability_pct"),
         "availability_checks": av.get("availability_checks"),
-        "measured_at": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+        "availability_ok": av.get("availability_ok"),
+        "measured_at": (
+            __import__("datetime")
+            .datetime.utcnow()
+            .isoformat()
+            + "Z"
+        ),
     }
+
+@router.get("/cloud-metrics/benchmark")
+async def cloud_metrics_benchmark(
+    current_user: dict = Depends(get_current_user),
+):
+    """Resultados de la prueba externa de rendimiento con k6."""
+    return get_api_performance_benchmark()
 
 
 # ─── PREDICTIONS ───
