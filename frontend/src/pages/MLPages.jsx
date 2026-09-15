@@ -483,6 +483,218 @@ function CategoryErrorCard({ rows }) {
   )
 }
 
+function BaselineComparisonCard({ metrics }) {
+  if (!metrics) return null
+
+  const xgb = metrics.test || metrics
+  const naive = metrics?.baselines?.naive_t_minus_1
+  const comparison = metrics?.comparison_vs_naive || {}
+
+  if (!naive) return null
+
+  const format = (value, decimals = 2) => {
+    if (value == null) return '-'
+    return Number(value).toFixed(decimals)
+  }
+
+  const rows = [
+    {
+      label: 'R²',
+      xgb: xgb?.r2,
+      naive: naive?.r2,
+      decimals: 4,
+      higherBetter: true,
+    },
+    {
+      label: 'WAPE',
+      xgb: xgb?.wape,
+      naive: naive?.wape,
+      decimals: 2,
+      suffix: '%',
+      higherBetter: false,
+    },
+    {
+      label: 'MAE',
+      xgb: xgb?.mae,
+      naive: naive?.mae,
+      decimals: 4,
+      higherBetter: false,
+    },
+    {
+      label: 'RMSE',
+      xgb: xgb?.rmse,
+      naive: naive?.rmse,
+      decimals: 4,
+      higherBetter: false,
+    },
+  ]
+
+  const getResult = (row) => {
+    if (row.xgb == null || row.naive == null) {
+      return {
+        text: '-',
+        cls: 'text-slate-400',
+      }
+    }
+
+    const x = Number(row.xgb)
+    const n = Number(row.naive)
+
+    if (x === n) {
+      return {
+        text: 'Igual',
+        cls: 'text-slate-500',
+      }
+    }
+
+    const xgbBetter = row.higherBetter
+      ? x > n
+      : x < n
+
+    return xgbBetter
+      ? {
+          text: 'XGBoost mejora',
+          cls: 'text-emerald-600 font-semibold',
+        }
+      : {
+          text: 'Naive mejora',
+          cls: 'text-amber-600 font-semibold',
+        }
+  }
+
+  const improvementCards = [
+    {
+      label: 'Ganancia R²',
+      value:
+        comparison.r2_gain != null
+          ? `${Number(comparison.r2_gain) > 0 ? '+' : ''}${format(
+              comparison.r2_gain,
+              4
+            )}`
+          : '-',
+    },
+    {
+      label: 'Reducción MAE',
+      value:
+        comparison.mae_reduction_pct != null
+          ? `${format(comparison.mae_reduction_pct, 2)}%`
+          : '-',
+    },
+    {
+      label: 'Reducción RMSE',
+      value:
+        comparison.rmse_reduction_pct != null
+          ? `${format(comparison.rmse_reduction_pct, 2)}%`
+          : '-',
+    },
+    {
+      label: 'Reducción WAPE',
+      value:
+        comparison.wape_reduction_pct != null
+          ? `${format(comparison.wape_reduction_pct, 2)}%`
+          : '-',
+    },
+  ]
+
+  return (
+    <div className="card p-5">
+      <div className="flex items-center justify-between gap-3 mb-1">
+        <h3 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+          <Brain className="w-4 h-4 text-blue-500" />
+          Comparación con Baseline Naive
+        </h3>
+
+        <span className="badge-blue">
+          TEST {metrics.test_pct ?? 20}%
+        </span>
+      </div>
+
+      <p className="text-xs text-slate-400 mb-4">
+        El modelo Naive t-1 utiliza la demanda observada del mes anterior
+        como predicción del mes siguiente. Se utiliza como referencia para
+        comprobar si XGBoost aporta una mejora predictiva.
+      </p>
+
+      <div className="overflow-x-auto rounded-xl border border-slate-200">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 text-xs text-slate-500">
+            <tr>
+              <th className="px-3 py-2 text-left">
+                Métrica
+              </th>
+
+              <th className="px-3 py-2 text-right">
+                XGBoost
+              </th>
+
+              <th className="px-3 py-2 text-right">
+                Naive t-1
+              </th>
+
+              <th className="px-3 py-2 text-right">
+                Resultado
+              </th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {rows.map((row) => {
+              const result = getResult(row)
+
+              return (
+                <tr
+                  key={row.label}
+                  className="border-t border-slate-100"
+                >
+                  <td className="px-3 py-2 font-medium text-slate-700">
+                    {row.label}
+                  </td>
+
+                  <td className="px-3 py-2 text-right font-semibold text-slate-900">
+                    {format(row.xgb, row.decimals)}
+                    {row.xgb != null ? row.suffix || '' : ''}
+                  </td>
+
+                  <td className="px-3 py-2 text-right text-slate-600">
+                    {format(row.naive, row.decimals)}
+                    {row.naive != null ? row.suffix || '' : ''}
+                  </td>
+
+                  <td className={`px-3 py-2 text-right ${result.cls}`}>
+                    {result.text}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 mt-4">
+        {improvementCards.map((item) => (
+          <div
+            key={item.label}
+            className="rounded-xl border border-slate-200 p-3"
+          >
+            <p className="text-xs text-slate-400">
+              {item.label}
+            </p>
+
+            <p className="text-lg font-bold text-slate-900 mt-0.5">
+              {item.value}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <p className="text-xs text-slate-400 mt-3">
+        En R² un valor mayor es mejor. En WAPE, MAE y RMSE,
+        un valor menor representa menor error predictivo.
+      </p>
+    </div>
+  )
+}
+
 function WalkForwardCard({ walkForward }) {
   const [showDetails, setShowDetails] = useState(false)
 
@@ -491,7 +703,6 @@ function WalkForwardCard({ walkForward }) {
   }
 
   const xgb = walkForward.summary.xgboost || {}
-  const naive = walkForward.summary.naive || {}
   const folds = walkForward.folds || []
 
   const metricText = (metric, percent = false) => {
@@ -523,8 +734,9 @@ function WalkForwardCard({ walkForward }) {
       </div>
 
       <p className="text-xs text-slate-400 mb-4">
-        Evaluación del modelo en múltiples periodos temporales mediante
-        ventana expansiva y predicción de un mes hacia adelante.
+        Evalúa la estabilidad temporal de XGBoost mediante una ventana
+        expansiva: el modelo se entrena con los meses anteriores y se
+        prueba sobre el siguiente mes en cada iteración.
       </p>
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
@@ -571,77 +783,12 @@ function WalkForwardCard({ walkForward }) {
 
       </div>
 
-      <div className="mt-5 overflow-x-auto rounded-xl border border-slate-200">
-        <table className="w-full text-sm">
-
-          <thead className="bg-slate-50 text-xs text-slate-500">
-            <tr>
-              <th className="px-3 py-2 text-left">
-                Métrica
-              </th>
-
-              <th className="px-3 py-2 text-right">
-                XGBoost
-              </th>
-
-              <th className="px-3 py-2 text-right">
-                Naive t-1
-              </th>
-            </tr>
-          </thead>
-
-          <tbody>
-
-            <tr className="border-t border-slate-100">
-              <td className="px-3 py-2 font-medium">
-                R²
-              </td>
-              <td className="px-3 py-2 text-right font-semibold">
-                {metricText(xgb.r2)}
-              </td>
-              <td className="px-3 py-2 text-right">
-                {metricText(naive.r2)}
-              </td>
-            </tr>
-
-            <tr className="border-t border-slate-100">
-              <td className="px-3 py-2 font-medium">
-                WAPE
-              </td>
-              <td className="px-3 py-2 text-right font-semibold">
-                {metricText(xgb.wape, true)}
-              </td>
-              <td className="px-3 py-2 text-right">
-                {metricText(naive.wape, true)}
-              </td>
-            </tr>
-
-            <tr className="border-t border-slate-100">
-              <td className="px-3 py-2 font-medium">
-                MAE
-              </td>
-              <td className="px-3 py-2 text-right font-semibold">
-                {metricText(xgb.mae)}
-              </td>
-              <td className="px-3 py-2 text-right">
-                {metricText(naive.mae)}
-              </td>
-            </tr>
-
-            <tr className="border-t border-slate-100">
-              <td className="px-3 py-2 font-medium">
-                RMSE
-              </td>
-              <td className="px-3 py-2 text-right font-semibold">
-                {metricText(xgb.rmse)}
-              </td>
-              <td className="px-3 py-2 text-right">
-                {metricText(naive.rmse)}
-              </td>
-            </tr>
-
-          </tbody>
-        </table>
+      <div className="mt-4 rounded-xl border border-violet-100 bg-violet-50/50 p-3">
+        <p className="text-xs text-violet-700">
+          Los valores mostrados corresponden al promedio ± desviación
+          estándar obtenidos por XGBoost a través de las{' '}
+          <b>{walkForward.n_folds} ventanas temporales</b>.
+        </p>
       </div>
 
       <button
@@ -655,51 +802,43 @@ function WalkForwardCard({ walkForward }) {
       </button>
 
       {showDetails && (
-
         <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200">
 
           <table className="w-full text-sm">
 
             <thead className="bg-slate-50 text-xs text-slate-500">
               <tr>
-                <th className="px-3 py-2">
+
+                <th className="px-3 py-2 text-center">
                   Fold
                 </th>
 
-                <th className="px-3 py-2">
+                <th className="px-3 py-2 text-left">
                   Mes prueba
                 </th>
 
                 <th className="px-3 py-2 text-right">
-                  R² XGB
+                  R²
                 </th>
 
                 <th className="px-3 py-2 text-right">
-                  R² Naive
+                  WAPE
                 </th>
 
                 <th className="px-3 py-2 text-right">
-                  WAPE XGB
+                  MAE
                 </th>
 
                 <th className="px-3 py-2 text-right">
-                  WAPE Naive
+                  RMSE
                 </th>
 
-                <th className="px-3 py-2 text-right">
-                  MAE XGB
-                </th>
-
-                <th className="px-3 py-2 text-right">
-                  RMSE XGB
-                </th>
               </tr>
             </thead>
 
             <tbody>
 
               {folds.map((fold) => (
-
                 <tr
                   key={fold.fold}
                   className="border-t border-slate-100"
@@ -718,18 +857,8 @@ function WalkForwardCard({ walkForward }) {
                   </td>
 
                   <td className="px-3 py-2 text-right">
-                    {fold.naive?.r2 ?? '-'}
-                  </td>
-
-                  <td className="px-3 py-2 text-right">
                     {fold.xgboost?.wape != null
                       ? `${fold.xgboost.wape}%`
-                      : '-'}
-                  </td>
-
-                  <td className="px-3 py-2 text-right">
-                    {fold.naive?.wape != null
-                      ? `${fold.naive.wape}%`
                       : '-'}
                   </td>
 
@@ -742,14 +871,13 @@ function WalkForwardCard({ walkForward }) {
                   </td>
 
                 </tr>
-
               ))}
 
             </tbody>
+
           </table>
 
         </div>
-
       )}
 
     </div>
@@ -963,11 +1091,19 @@ export function PredictionsPage() {
             </div>
           )}
 
-          <WalkForwardCard
-          walkForward={metrics?.walk_forward}
-          />
+          <BaselineComparisonCard
+  metrics={metrics}
+/>
 
-          <CloudMetricsCard cloud={cloudMerged} onRefresh={refreshCloud} refreshing={refreshingCloud} />
+<WalkForwardCard
+  walkForward={metrics?.walk_forward}
+/>
+
+<CloudMetricsCard
+  cloud={cloudMerged}
+  onRefresh={refreshCloud}
+  refreshing={refreshingCloud}
+/>
 
           {selectedProduct && (
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
