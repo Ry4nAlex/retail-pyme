@@ -194,7 +194,9 @@ export function ProductsPage() {
   ) : p.stock <= p.min_stock ? (
     <span className="badge-yellow">Bajo stock</span>
   ) : p.max_stock > 0 && p.stock > p.max_stock ? (
-    <span className="badge-purple">Sobrestock</span>
+    <span className="inline-flex items-center rounded-full bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-700 ring-1 ring-inset ring-violet-200">
+      Sobrestock
+    </span>
   ) : (
     <span className="badge-green">Saludable</span>
   );
@@ -475,7 +477,9 @@ export function InventoryPage() {
   ) : p.stock <= p.min_stock ? (
     <span className="badge-yellow">Bajo stock</span>
   ) : p.max_stock > 0 && p.stock > p.max_stock ? (
-    <span className="badge-purple">Sobrestock</span>
+    <span className="inline-flex items-center rounded-full bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-700 ring-1 ring-inset ring-violet-200">
+      Sobrestock
+    </span>
   ) : (
     <span className="badge-green">Saludable</span>
   );
