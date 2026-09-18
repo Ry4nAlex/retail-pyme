@@ -189,13 +189,15 @@ export function ProductsPage() {
   };
 
   const stockBadge = (p) =>
-    p.stock === 0 ? (
-      <span className="badge-red">Sin stock</span>
-    ) : p.stock <= p.min_stock ? (
-      <span className="badge-yellow">Bajo</span>
-    ) : (
-      <span className="badge-green">OK</span>
-    );
+  p.stock === 0 ? (
+    <span className="badge-red">Sin stock</span>
+  ) : p.stock <= p.min_stock ? (
+    <span className="badge-yellow">Bajo stock</span>
+  ) : p.max_stock > 0 && p.stock > p.max_stock ? (
+    <span className="badge-purple">Sobrestock</span>
+  ) : (
+    <span className="badge-green">Saludable</span>
+  );
   const F = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   return (
@@ -468,13 +470,15 @@ export function InventoryPage() {
     }
   };
   const badge = (p) =>
-    p.stock === 0 ? (
-      <span className="badge-red">Sin stock</span>
-    ) : p.stock <= p.min_stock ? (
-      <span className="badge-yellow">Bajo</span>
-    ) : (
-      <span className="badge-green">Normal</span>
-    );
+  p.stock === 0 ? (
+    <span className="badge-red">Sin stock</span>
+  ) : p.stock <= p.min_stock ? (
+    <span className="badge-yellow">Bajo stock</span>
+  ) : p.max_stock > 0 && p.stock > p.max_stock ? (
+    <span className="badge-purple">Sobrestock</span>
+  ) : (
+    <span className="badge-green">Saludable</span>
+  );
 
   return (
     <div className="space-y-5">
