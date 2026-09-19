@@ -173,7 +173,7 @@ class DatasetUpload(Base):
     __tablename__ = "dataset_uploads"
     id            = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     company_id    = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
-    uploaded_by   = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    uploaded_by = Column(UUID(as_uuid=True),ForeignKey("users.id", ondelete="SET NULL"),nullable=True)    
     filename      = Column(String(255), nullable=False)
     original_name = Column(String(255), nullable=False)
     file_path     = Column(Text, nullable=False)
@@ -258,7 +258,7 @@ class StockAnalysis(Base):
     __tablename__ = "stock_analyses"
     id              = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     company_id      = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
-    created_by      = Column(UUID(as_uuid=True), ForeignKey("users.id"))
+    created_by = Column(UUID(as_uuid=True),ForeignKey("users.id", ondelete="SET NULL"),nullable=True)    
     dataset_id      = Column(UUID(as_uuid=True), ForeignKey("dataset_uploads.id"), nullable=True)
     source_filename = Column(String(255))
     horizon_months  = Column(Integer, default=3)

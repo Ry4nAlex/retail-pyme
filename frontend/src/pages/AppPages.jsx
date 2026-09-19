@@ -1827,11 +1827,19 @@ export function UsersPage() {
     }
   };
   const del = async (u) => {
-    if (!confirm(`Desactivar usuario "${u.name}"?`)) return;
+  if (!confirm(`¿Eliminar permanentemente al usuario "${u.name}"?`)) return;
+
+  try {
     await usersService.delete(u.id);
-    toast.success("Usuario desactivado");
+    toast.success("Usuario eliminado correctamente");
     load();
-  };
+  } catch (e) {
+    toast.error(
+      e.response?.data?.detail ||
+      "No se pudo eliminar el usuario"
+    );
+  }
+};
   const F = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const companyName = (id) => companies.find((c) => c.id === id)?.name || "-";
 

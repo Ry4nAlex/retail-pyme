@@ -306,16 +306,37 @@ async def update_user(user_id: UUID, data: UserUpdate, db: AsyncSession = Depend
 
 
 @users_router.delete("/{user_id}")
-async def delete_user(user_id: UUID, db: AsyncSession = Depends(get_db), current_user: dict = Depends(require_admin)):
-    r = await db.execute(select(User).where(User.id == user_id))
+async def delete_user(
+    user_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    r = await db.execute(
+        select(User).where(User.id == user_id)
+    )
+
     u = r.scalar_one_or_none()
+
     if not u:
-        raise HTTPException(404, "User not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Usuario no encontrado"
+        )
+
     _assert_can_manage_user(current_user, u)
+
     if str(u.id) == str(current_user["user_id"]):
-        raise HTTPException(400, "Cannot deactivate your own user")
-    u.active = False
-    return {"message": "User deactivated"}
+        raise HTTPException(
+            status_code=400,
+            detail="No puedes eliminar tu propio usuario"
+        )
+
+    await db.delete(u)
+    await db.flush()
+
+    return {
+        "message": "Usuario eliminado correctamente"
+    }
 
 
 companies_router = APIRouter(prefix="/companies", tags=["Companies"])
