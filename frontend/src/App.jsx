@@ -39,7 +39,7 @@ function AppRoutes() {
       <Route path="/categories"   element={<Private blockSuper><CategoriesPage /></Private>} />
       <Route path="/ml/datasets"  element={<Private adminOnly blockSuper><DatasetsPage /></Private>} />
       <Route path="/ml/predictions" element={<Private blockSuper><PredictionsPage /></Private>} />
-      <Route path="/ml/stock-analysis" element={<Private adminOnly blockSuper><StockAnalysisPage /></Private>} />
+      <Route path="/ml/stock-analysis" element={<Private blockSuper><StockAnalysisPage /></Private>} />      
       <Route path="/users"        element={<Private adminOnly><UsersPage /></Private>} />
       <Route path="/companies"    element={<Private superOnly><CompaniesPage /></Private>} />
 
