@@ -40,6 +40,7 @@ export default function IngestPage({ embedded = false }) {
   const [replaceExisting, setReplaceExisting] = useState(false)
   const [runMl, setRunMl] = useState(true)
   const [runWalkForward, setRunWalkForward] = useState(false)
+  const [runAblation, setRunAblation] = useState(false)
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
   const [mlOnline, setMlOnline] = useState(null)
@@ -67,6 +68,7 @@ export default function IngestPage({ embedded = false }) {
     fd.append('replace_existing', replaceExisting)
     fd.append('run_ml', runMl)
     fd.append('run_walk_forward', runWalkForward)
+    fd.append('run_ablation', runAblation)
     setLoading(true)
     setResult(null)
     try {
@@ -149,7 +151,7 @@ export default function IngestPage({ embedded = false }) {
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-5">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mt-5">
           <div>
             <label className="field-label">Meses a pronosticar</label>
             <select className="field-input" value={horizon} onChange={(e) => setHorizon(Number(e.target.value))}>
@@ -170,6 +172,16 @@ export default function IngestPage({ embedded = false }) {
           />
             Validación temporal (Walk-forward)
           </label>
+          <label className="flex items-center gap-2 mt-6 text-sm text-slate-600 cursor-pointer">
+  <input
+    type="checkbox"
+    checked={runAblation}
+    onChange={(e) => setRunAblation(e.target.checked)}
+    disabled={!runMl}
+    className="rounded"
+  />
+  Experimento de ablación
+</label>
           <label className="flex items-center gap-2 mt-6 text-sm text-slate-600 cursor-pointer">
             <input type="checkbox" checked={replaceExisting} onChange={(e) => setReplaceExisting(e.target.checked)} className="rounded" />
             Reemplazar carga anterior
