@@ -243,7 +243,7 @@ export default function IngestPage({ embedded = false }) {
           {result.ml?.metrics && (
             <div className="card p-5">
               <h3 className="font-semibold text-slate-800 text-sm mb-3 flex items-center gap-2"><Brain className="w-4 h-4 text-azure-500" /> Calidad del modelo XGBoost</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                 {[
                   ['Split objetivo', result.ml.metrics.target_split || '80/20'],
                   ['Split efectivo', result.ml.metrics.effective_train_pct != null ? `${result.ml.metrics.effective_train_pct}/${result.ml.metrics.effective_val_pct ?? result.ml.metrics.val_pct ?? '-'}/${result.ml.metrics.effective_test_pct}` : '-'],

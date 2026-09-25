@@ -470,6 +470,175 @@ function RetailMetricsCard({ metrics, importance }) {
   )
 }
 
+function AblationExperimentCard({ ablation }) {
+  if (!ablation || !ablation.results || !ablation.results.length) return null
+
+  const rows = ablation.results
+
+  const bestR2 = rows.reduce((best, row) => {
+    if (best == null) return row
+    if ((row.r2 ?? -Infinity) > (best.r2 ?? -Infinity)) return row
+    return best
+  }, null)
+
+  const bestWape = rows.reduce((best, row) => {
+    if (best == null) return row
+    if ((row.wape ?? Infinity) < (best.wape ?? Infinity)) return row
+    return best
+  }, null)
+
+  const labelMap = {
+    sin_variables_temporales: 'Sin variables temporales',
+    lag_1: 'Lag-1',
+    lag_1_2_3: 'Lag-1, Lag-2, Lag-3',
+    rolling_mean: 'Lags + Rolling Mean',
+    modelo_completo: 'Modelo completo',
+  }
+
+  const fmtPct = (v) =>
+    v == null || v === '-'
+      ? '-'
+      : `${Number(v).toFixed(2)}%`
+
+  return (
+    <div className="card p-6">
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
+        <div>
+          <h3 className="font-semibold text-slate-800">
+            Experimento de ablación de variables
+          </h3>
+          <p className="text-sm text-slate-500 mt-1">
+            Evalúa cómo cambia el rendimiento al incorporar progresivamente
+            variables temporales al modelo XGBoost.
+          </p>
+        </div>
+
+        <span className="badge badge-blue">
+          {rows.length} configuraciones
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+        <div className="rounded-xl border border-slate-200 p-3">
+          <p className="text-xs text-slate-400">Mejor R²</p>
+          <p className="text-xl font-bold text-slate-800">
+            {bestR2?.r2 ?? '-'}
+          </p>
+          <p className="text-[11px] text-slate-400">
+            {labelMap[bestR2?.configuration] || bestR2?.configuration}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 p-3">
+          <p className="text-xs text-slate-400">Menor WAPE</p>
+          <p className="text-xl font-bold text-slate-800">
+            {fmtPct(bestWape?.wape)}
+          </p>
+          <p className="text-[11px] text-slate-400">
+            {labelMap[bestWape?.configuration] || bestWape?.configuration}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 p-3">
+          <p className="text-xs text-slate-400">Split evaluado</p>
+          <p className="text-xl font-bold text-slate-800">
+            80/20
+          </p>
+          <p className="text-[11px] text-slate-400">
+            Mismos meses y mismos hiperparámetros
+          </p>
+        </div>
+      </div>
+
+      <div className="mb-4 text-xs text-slate-500">
+        Train: {ablation.train_period?.from} → {ablation.train_period?.to}
+        {' | '}
+        Test: {ablation.test_period?.from} → {ablation.test_period?.to}
+        {' | '}
+        Registros: {ablation.n_train}/{ablation.n_test}
+      </div>
+
+      <div className="overflow-x-auto rounded-xl border border-slate-200">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+            <tr>
+              {[
+                'Configuración',
+                'N° vars',
+                'R²',
+                'WAPE',
+                'MAE',
+                'RMSE',
+                'Δ WAPE vs anterior',
+                'Δ RMSE vs anterior',
+              ].map((h) => (
+                <th key={h} className="px-3 py-2 font-semibold">
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+
+          <tbody>
+            {rows.map((row, idx) => {
+              const isBest =
+                row.configuration === bestWape?.configuration
+
+              return (
+                <tr
+                  key={row.configuration}
+                  className={`border-t border-slate-100 ${
+                    isBest ? 'bg-emerald-50/40' : ''
+                  }`}
+                >
+                  <td className="px-3 py-2 font-medium text-slate-800">
+                    <div className="flex flex-col">
+                      <span>
+                        {labelMap[row.configuration] || row.configuration}
+                      </span>
+                      <span className="text-xs text-slate-400">
+                        {row.features?.join(', ')}
+                      </span>
+                    </div>
+                  </td>
+
+                  <td className="px-3 py-2 text-slate-700">
+                    {row.n_features}
+                  </td>
+
+                  <td className="px-3 py-2 font-semibold text-slate-900">
+                    {row.r2 ?? '-'}
+                  </td>
+
+                  <td className="px-3 py-2 font-semibold text-slate-900">
+                    {fmtPct(row.wape)}
+                  </td>
+
+                  <td className="px-3 py-2 text-slate-700">
+                    {row.mae ?? '-'}
+                  </td>
+
+                  <td className="px-3 py-2 text-slate-700">
+                    {row.rmse ?? '-'}
+                  </td>
+
+                  <td className="px-3 py-2 text-slate-700">
+                    {fmtPct(row.wape_improvement_vs_previous_pct)}
+                  </td>
+
+                  <td className="px-3 py-2 text-slate-700">
+                    {fmtPct(row.rmse_improvement_vs_previous_pct)}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 export default function StockAnalysisPage() {
   const [result, setResult] = useState(null)
   const [analyses, setAnalyses] = useState([])
@@ -595,7 +764,7 @@ export default function StockAnalysisPage() {
           </div>
 
           <RetailMetricsCard metrics={result.metrics} importance={result.feature_importance} />
-
+          <AblationExperimentCard ablation={result?.metrics?.ablation} />
           <div className="table-wrapper">
             <div className="card-header">
               <h3 className="font-semibold text-slate-800 flex items-center gap-2"><PackageSearch className="w-4 h-4 text-slate-400" /> Resultado por producto</h3>

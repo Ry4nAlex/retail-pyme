@@ -1682,6 +1682,12 @@ def run_full_analysis(df: pd.DataFrame, params: dict | None = None):
             False
         )
     )
+    run_ablation = params.get("run_ablation", False)
+    ablation_results = (
+    run_ablation_experiment(full, params.get("model_params"))
+    if run_ablation
+    else None
+    )
     t_train = time.perf_counter() - t1
 
     t2 = time.perf_counter()
@@ -1718,13 +1724,16 @@ def run_full_analysis(df: pd.DataFrame, params: dict | None = None):
     }
 
     return {
-        "summary": summary,
-        "metrics": metrics,
-        "feature_importance": {k: round(v, 4) for k, v in importance.items()},
-        "products": products,
-        "inventory_backtest": inventory_backtesting,
-        "timings": timings,
-    }
+    "summary": summary,
+    "metrics": {
+        **metrics,
+        "ablation": ablation_results,
+    },
+    "feature_importance": {k: round(v, 4) for k, v in importance.items()},
+    "products": products,
+    "inventory_backtest": inventory_backtesting,
+    "timings": timings,
+}
 
 
 if __name__ == "__main__":
