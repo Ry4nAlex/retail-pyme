@@ -310,6 +310,7 @@ async def analyze_stock(
     overstock_threshold_days: float = Form(75),
     understock_threshold_days: float = Form(30),
     target_coverage_days: float = Form(45),
+    run_walk_forward: bool = Form(False),
     current_stock: str = Form(None),          # JSON opcional: {"prod-001": 120, ...}
     dataset_id: str = Form(None),             # opcional: enlazar a un dataset ya subido
     db: AsyncSession = Depends(get_db),
@@ -337,6 +338,7 @@ async def analyze_stock(
         "overstock_threshold_days": overstock_threshold_days,
         "understock_threshold_days": understock_threshold_days,
         "target_coverage_days": target_coverage_days,
+        "run_walk_forward": run_walk_forward,
     }
     if current_stock:
         try:

@@ -135,134 +135,320 @@ function ProductRow({ p }) {
   )
 }
 
-function MetricsCard({ metrics, importance }) {
-  if (!metrics) return null
-  const impData = Object.entries(importance || {}).slice(0, 8).map(([k, v]) => ({ feature: k, value: Number((v * 100).toFixed(1)) }))
-  const r2Pct = metrics.r2 != null ? Math.max(0, Math.round(metrics.r2 * 100)) : null
-  const pct = (v) => v == null ? '-' : `${Number(v).toFixed(2)}%`
-  const splitLabel = metrics.target_split || (metrics.train_pct && metrics.val_pct && metrics.test_pct ? `${metrics.train_pct}/${metrics.val_pct}/${metrics.test_pct}` : '70/20/10')
-  const trainPeriod = metrics.train_period ? `${metrics.train_period.from} -> ${metrics.train_period.to}` : ''
-  const testPeriod = metrics.test_period ? `${metrics.test_period.from} -> ${metrics.test_period.to}` : ''
-  return (
-    <div className="card p-6">
-      <h3 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
-        <Brain className="w-4 h-4 text-azure-500" /> Calidad del modelo XGBoost
-      </h3>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="grid grid-cols-2 gap-3">
-          {[ 
-            ['Split', splitLabel, 'train / validacion / test'],
-            ['R²', metrics.r2 ?? '-', r2Pct != null ? `${r2Pct}% varianza explicada` : ''],
-            ['MAE', metrics.mae ?? '-', 'error medio (u)'],
-            ['RMSE', metrics.rmse ?? '-', 'error cuadrático'],
-            ['MAPE', metrics.mape != null ? `${metrics.mape}%` : '-', 'error porcentual'],
-            ['WAPE', pct(metrics.wape), 'error ponderado retail'],
-            ['Precisión forecast', pct(metrics.forecast_accuracy_pct), '100 - WAPE'],
-            ['Sesgo', pct(metrics.bias_pct), 'sobre/subestimación'],
-            ['Gap WAPE', pct(metrics.gap_train_test?.wape), 'brecha train-test'],
-          ].map(([k, v, s]) => (
-            <div key={k} className="rounded-xl border border-slate-200 p-3">
-              <p className="text-xs text-slate-400">{k}</p>
-              <p className="text-xl font-bold text-slate-800" style={{ fontFamily: "'Sora', sans-serif" }}>{v}</p>
-              <p className="text-[11px] text-slate-400">{s}</p>
-            </div>
-          ))}
-          <div className="col-span-2 text-xs text-slate-400 mt-1">
-            Granularidad: <b className="text-slate-600">{metrics.granularity || 'mensual'}</b> · Entrenamiento/Prueba: {metrics.n_train}/{metrics.n_test} registros
-            {(trainPeriod || testPeriod) && (
-              <span className="block mt-1">Train: {trainPeriod || '-'} · Test: {testPeriod || '-'}</span>
-            )}
-          </div>
-        </div>
-        <div>
-          <p className="text-xs font-semibold text-slate-500 mb-2">Importancia de variables (%)</p>
-          <ResponsiveContainer width="100%" height={190}>
-            <BarChart data={impData} layout="vertical" margin={{ top: 0, right: 12, left: 12, bottom: 0 }}>
-              <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }} />
-              <YAxis type="category" dataKey="feature" tick={{ fontSize: 10, fill: '#64748b' }} width={70} />
-              <Tooltip contentStyle={{ borderRadius: 12, fontSize: 12 }} />
-              <Bar dataKey="value" fill="#8b5cf6" radius={[0, 4, 4, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-    </div>
-  )
-}
+
+// function RetailMetricsCard({ metrics, importance }) {
+//   if (!metrics) return null
+//   const impData = Object.entries(importance || {}).slice(0, 8).map(([k, v]) => ({ feature: k, value: Number((v * 100).toFixed(1)) }))
+//   const pct = (v) => v == null || v === '-' ? '-' : `${Number(v).toFixed(2)}%`
+//   const splitLabel = metrics.target_split || '70/20/10'
+//   const val = metrics.validation || {}
+//   const test = metrics.test || metrics
+//   const periods = metrics.periods || {}
+//   const fmtP = (p) => p && p.from ? `${p.from} -> ${p.to}` : '-'
+//   const metricRows = [
+//     ['Split temporal', splitLabel, `${metrics.n_val ?? '-'} reg. (${metrics.val_pct ?? '-'}%)`, `${metrics.n_test ?? '-'} reg. (${metrics.test_pct ?? '-'}%)`, `train ${metrics.n_train ?? '-'} (${metrics.train_pct ?? '-'}%)`, 'Split cronologico 70/20/10. Del train no se reportan resultados, solo validacion y test.'],
+//     ['R2', '', val.r2 ?? '-', test.r2 ?? '-', '', 'Capacidad para explicar la variacion de demanda (1 = perfecto).'],
+//     ['WAPE', '', pct(val.wape), pct(test.wape), '', 'Error ponderado por volumen; metrica clave en retail.'],
+//     ['Precision forecast', '', pct(val.forecast_accuracy_pct), pct(test.forecast_accuracy_pct), '', 'Precision global aproximada: 100 - WAPE.'],
+//     ['MAPE', '', pct(val.mape), pct(test.mape), '', 'Error porcentual medio; sensible a productos con baja demanda.'],
+//     ['MAE', '', val.mae ?? '-', test.mae ?? '-', '', 'Error promedio en unidades vendidas.'],
+//     ['RMSE', '', val.rmse ?? '-', test.rmse ?? '-', '', 'Penaliza errores grandes y picos mal pronosticados.'],
+//     ['Sesgo', '', pct(val.bias_pct), pct(test.bias_pct), '', 'Negativo subestima demanda; positivo sobreestima.'],
+//   ]
+//   const cards = [
+//     ['Split', splitLabel, 'train / validacion / test'],
+//     ['Registros', `${metrics.n_train ?? '-'}/${metrics.n_val ?? '-'}/${metrics.n_test ?? '-'}`, 'train/val/test'],
+//     ['R2 validacion', val.r2 ?? '-', 'desempeno en validacion'],
+//     ['R2 test', test.r2 ?? '-', 'desempeno fuera de muestra'],
+//     ['WAPE test', pct(test.wape), 'error retail ponderado'],
+//     ['Precision forecast', pct(test.forecast_accuracy_pct), '100 - WAPE'],
+//   ]
+//   return (
+//     <div className="card p-6">
+//       <h3 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
+//         <Brain className="w-4 h-4 text-azure-500" /> Calidad del modelo XGBoost
+//       </h3>
+//       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+//         <div>
+//           <div className="grid grid-cols-2 gap-3">
+//             {cards.map(([k, v, s]) => (
+//               <div key={k} className="rounded-xl border border-slate-200 p-3">
+//                 <p className="text-xs text-slate-400">{k}</p>
+//                 <p className="text-xl font-bold text-slate-800" style={{ fontFamily: "'Sora', sans-serif" }}>{v}</p>
+//                 <p className="text-[11px] text-slate-400">{s}</p>
+//               </div>
+//             ))}
+//           </div>
+//           <p className="mt-3 text-xs text-slate-400">
+//             Granularidad: <b className="text-slate-600">{metrics.granularity || 'monthly'}</b> | Train/Val/Test: {metrics.n_train}/{metrics.n_val}/{metrics.n_test} registros
+//           </p>
+//           <p className="mt-1 text-xs text-slate-400">Val: {fmtP(periods.validation)} | Test: {fmtP(periods.test)}</p>
+//           {metrics.split_note && <p className="mt-1 text-xs text-slate-400">{metrics.split_note}</p>}
+//         </div>
+//         <div>
+//           <p className="text-xs font-semibold text-slate-500 mb-2">Importancia de variables (%)</p>
+//           <ResponsiveContainer width="100%" height={230}>
+//             <BarChart data={impData} layout="vertical" margin={{ top: 0, right: 12, left: 12, bottom: 0 }}>
+//               <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }} />
+//               <YAxis type="category" dataKey="feature" tick={{ fontSize: 10, fill: '#64748b' }} width={70} />
+//               <Tooltip contentStyle={{ borderRadius: 12, fontSize: 12 }} />
+//               <Bar dataKey="value" fill="#8b5cf6" radius={[0, 4, 4, 0]} />
+//             </BarChart>
+//           </ResponsiveContainer>
+//         </div>
+//       </div>
+//       <div className="mt-6 overflow-x-auto rounded-xl border border-slate-200">
+//         <table className="w-full text-sm">
+//           <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+//             <tr>{['Metrica', 'Validacion (20%)', 'Test (10%)', 'Interpretacion'].map((h) => <th key={h} className="px-3 py-2 font-semibold">{h}</th>)}</tr>
+//           </thead>
+//           <tbody>
+//             {metricRows.map(([name, _t, valValue, testValue, _g, interpretation]) => (
+//               <tr key={name} className="border-t border-slate-100">
+//                 <td className="px-3 py-2 font-semibold text-slate-800">{name}</td>
+//                 <td className="px-3 py-2 text-slate-700">{valValue}</td>
+//                 <td className="px-3 py-2 font-semibold text-slate-900">{testValue}</td>
+//                 <td className="px-3 py-2 text-slate-500">{interpretation}</td>
+//               </tr>
+//             ))}
+//           </tbody>
+//         </table>
+//       </div>
+//     </div>
+//   )
+// }
 
 function RetailMetricsCard({ metrics, importance }) {
   if (!metrics) return null
-  const impData = Object.entries(importance || {}).slice(0, 8).map(([k, v]) => ({ feature: k, value: Number((v * 100).toFixed(1)) }))
-  const pct = (v) => v == null || v === '-' ? '-' : `${Number(v).toFixed(2)}%`
-  const splitLabel = metrics.target_split || '70/20/10'
-  const val = metrics.validation || {}
+
+  const impData = Object.entries(importance || {})
+    .slice(0, 8)
+    .map(([k, v]) => ({
+      feature: k,
+      value: Number((v * 100).toFixed(1))
+    }))
+
+  const pct = (v) =>
+    v == null || v === '-'
+      ? '-'
+      : `${Number(v).toFixed(2)}%`
+
+  const splitLabel = metrics.target_split || '80/20'
   const test = metrics.test || metrics
   const periods = metrics.periods || {}
-  const fmtP = (p) => p && p.from ? `${p.from} -> ${p.to}` : '-'
+
+  const fmtP = (p) =>
+    p && p.from
+      ? `${p.from} -> ${p.to}`
+      : '-'
+
   const metricRows = [
-    ['Split temporal', splitLabel, `${metrics.n_val ?? '-'} reg. (${metrics.val_pct ?? '-'}%)`, `${metrics.n_test ?? '-'} reg. (${metrics.test_pct ?? '-'}%)`, `train ${metrics.n_train ?? '-'} (${metrics.train_pct ?? '-'}%)`, 'Split cronologico 70/20/10. Del train no se reportan resultados, solo validacion y test.'],
-    ['R2', '', val.r2 ?? '-', test.r2 ?? '-', '', 'Capacidad para explicar la variacion de demanda (1 = perfecto).'],
-    ['WAPE', '', pct(val.wape), pct(test.wape), '', 'Error ponderado por volumen; metrica clave en retail.'],
-    ['Precision forecast', '', pct(val.forecast_accuracy_pct), pct(test.forecast_accuracy_pct), '', 'Precision global aproximada: 100 - WAPE.'],
-    ['MAPE', '', pct(val.mape), pct(test.mape), '', 'Error porcentual medio; sensible a productos con baja demanda.'],
-    ['MAE', '', val.mae ?? '-', test.mae ?? '-', '', 'Error promedio en unidades vendidas.'],
-    ['RMSE', '', val.rmse ?? '-', test.rmse ?? '-', '', 'Penaliza errores grandes y picos mal pronosticados.'],
-    ['Sesgo', '', pct(val.bias_pct), pct(test.bias_pct), '', 'Negativo subestima demanda; positivo sobreestima.'],
+    [
+      'R²',
+      test.r2 ?? '-',
+      'Capacidad para explicar la variación de demanda.'
+    ],
+    [
+      'WAPE',
+      pct(test.wape),
+      'Error ponderado por volumen.'
+    ],
+    [
+      'Precisión forecast',
+      pct(test.forecast_accuracy_pct),
+      'Precisión global aproximada: 100 - WAPE.'
+    ],
+    [
+      'MAPE',
+      pct(test.mape),
+      'Error porcentual medio.'
+    ],
+    [
+      'MAE',
+      test.mae ?? '-',
+      'Error promedio en unidades vendidas.'
+    ],
+    [
+      'RMSE',
+      test.rmse ?? '-',
+      'Penaliza errores de mayor magnitud.'
+    ],
+    [
+      'Sesgo',
+      pct(test.bias_pct),
+      'Negativo subestima demanda; positivo sobreestima.'
+    ],
   ]
+
   const cards = [
-    ['Split', splitLabel, 'train / validacion / test'],
-    ['Registros', `${metrics.n_train ?? '-'}/${metrics.n_val ?? '-'}/${metrics.n_test ?? '-'}`, 'train/val/test'],
-    ['R2 validacion', val.r2 ?? '-', 'desempeno en validacion'],
-    ['R2 test', test.r2 ?? '-', 'desempeno fuera de muestra'],
-    ['WAPE test', pct(test.wape), 'error retail ponderado'],
-    ['Precision forecast', pct(test.forecast_accuracy_pct), '100 - WAPE'],
+    [
+      'Split',
+      splitLabel,
+      'entrenamiento / prueba'
+    ],
+    [
+      'Registros',
+      `${metrics.n_train ?? '-'}/${metrics.n_test ?? '-'}`,
+      'train / test'
+    ],
+    [
+      'Meses',
+      `${metrics.n_train_months ?? '-'}/${metrics.n_test_months ?? '-'}`,
+      'train / test'
+    ],
+    [
+      'R² test',
+      test.r2 ?? '-',
+      'desempeño fuera de muestra'
+    ],
+    [
+      'WAPE test',
+      pct(test.wape),
+      'error ponderado'
+    ],
+    [
+      'Precisión forecast',
+      pct(test.forecast_accuracy_pct),
+      '100 - WAPE'
+    ],
   ]
+
   return (
     <div className="card p-6">
       <h3 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
-        <Brain className="w-4 h-4 text-azure-500" /> Calidad del modelo XGBoost
+        <Brain className="w-4 h-4 text-azure-500" />
+        Calidad del modelo XGBoost
       </h3>
+
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <div>
           <div className="grid grid-cols-2 gap-3">
             {cards.map(([k, v, s]) => (
-              <div key={k} className="rounded-xl border border-slate-200 p-3">
-                <p className="text-xs text-slate-400">{k}</p>
-                <p className="text-xl font-bold text-slate-800" style={{ fontFamily: "'Sora', sans-serif" }}>{v}</p>
-                <p className="text-[11px] text-slate-400">{s}</p>
+              <div
+                key={k}
+                className="rounded-xl border border-slate-200 p-3"
+              >
+                <p className="text-xs text-slate-400">
+                  {k}
+                </p>
+
+                <p
+                  className="text-xl font-bold text-slate-800"
+                  style={{ fontFamily: "'Sora', sans-serif" }}
+                >
+                  {v}
+                </p>
+
+                <p className="text-[11px] text-slate-400">
+                  {s}
+                </p>
               </div>
             ))}
           </div>
+
           <p className="mt-3 text-xs text-slate-400">
-            Granularidad: <b className="text-slate-600">{metrics.granularity || 'monthly'}</b> | Train/Val/Test: {metrics.n_train}/{metrics.n_val}/{metrics.n_test} registros
+            Granularidad:{' '}
+            <b className="text-slate-600">
+              {metrics.granularity || 'monthly'}
+            </b>
+            {' | '}
+            Train/Test: {metrics.n_train}/{metrics.n_test} registros
           </p>
-          <p className="mt-1 text-xs text-slate-400">Val: {fmtP(periods.validation)} | Test: {fmtP(periods.test)}</p>
-          {metrics.split_note && <p className="mt-1 text-xs text-slate-400">{metrics.split_note}</p>}
+
+          <p className="mt-1 text-xs text-slate-400">
+            Train: {fmtP(periods.train)}
+            {' | '}
+            Test: {fmtP(periods.test)}
+          </p>
+
+          {metrics.split_note && (
+            <p className="mt-1 text-xs text-slate-400">
+              {metrics.split_note}
+            </p>
+          )}
         </div>
+
         <div>
-          <p className="text-xs font-semibold text-slate-500 mb-2">Importancia de variables (%)</p>
+          <p className="text-xs font-semibold text-slate-500 mb-2">
+            Importancia de variables (%)
+          </p>
+
           <ResponsiveContainer width="100%" height={230}>
-            <BarChart data={impData} layout="vertical" margin={{ top: 0, right: 12, left: 12, bottom: 0 }}>
-              <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }} />
-              <YAxis type="category" dataKey="feature" tick={{ fontSize: 10, fill: '#64748b' }} width={70} />
-              <Tooltip contentStyle={{ borderRadius: 12, fontSize: 12 }} />
-              <Bar dataKey="value" fill="#8b5cf6" radius={[0, 4, 4, 0]} />
+            <BarChart
+              data={impData}
+              layout="vertical"
+              margin={{
+                top: 0,
+                right: 12,
+                left: 12,
+                bottom: 0
+              }}
+            >
+              <XAxis
+                type="number"
+                tick={{ fontSize: 10, fill: '#94a3b8' }}
+              />
+
+              <YAxis
+                type="category"
+                dataKey="feature"
+                tick={{ fontSize: 10, fill: '#64748b' }}
+                width={70}
+              />
+
+              <Tooltip
+                contentStyle={{
+                  borderRadius: 12,
+                  fontSize: 12
+                }}
+              />
+
+              <Bar
+                dataKey="value"
+                fill="#8b5cf6"
+                radius={[0, 4, 4, 0]}
+              />
             </BarChart>
           </ResponsiveContainer>
         </div>
       </div>
+
       <div className="mt-6 overflow-x-auto rounded-xl border border-slate-200">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
-            <tr>{['Metrica', 'Validacion (20%)', 'Test (10%)', 'Interpretacion'].map((h) => <th key={h} className="px-3 py-2 font-semibold">{h}</th>)}</tr>
+            <tr>
+              {[
+                'Métrica',
+                'Test (20%)',
+                'Interpretación'
+              ].map((h) => (
+                <th
+                  key={h}
+                  className="px-3 py-2 font-semibold"
+                >
+                  {h}
+                </th>
+              ))}
+            </tr>
           </thead>
+
           <tbody>
-            {metricRows.map(([name, _t, valValue, testValue, _g, interpretation]) => (
-              <tr key={name} className="border-t border-slate-100">
-                <td className="px-3 py-2 font-semibold text-slate-800">{name}</td>
-                <td className="px-3 py-2 text-slate-700">{valValue}</td>
-                <td className="px-3 py-2 font-semibold text-slate-900">{testValue}</td>
-                <td className="px-3 py-2 text-slate-500">{interpretation}</td>
+            {metricRows.map(([name, value, interpretation]) => (
+              <tr
+                key={name}
+                className="border-t border-slate-100"
+              >
+                <td className="px-3 py-2 font-semibold text-slate-800">
+                  {name}
+                </td>
+
+                <td className="px-3 py-2 font-semibold text-slate-900">
+                  {value}
+                </td>
+
+                <td className="px-3 py-2 text-slate-500">
+                  {interpretation}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -442,7 +628,7 @@ export default function StockAnalysisPage() {
                 <td className="table-td text-xs text-slate-400">{new Date(a.created_at).toLocaleString('es-PE')}</td>
                 <td className="table-td text-sm text-slate-600">{a.total_products}</td>
                 <td className="table-td"><span className={a.overstock_count > 0 ? 'badge-red' : 'badge-slate'}>{a.overstock_count}</span></td>
-                <td className="table-td text-sm text-slate-600">{a.metrics?.target_split || '70/20/10'}</td>
+                <td className="table-td text-sm text-slate-600">{a.metrics?.target_split || '80/20'}</td>
                 <td className="table-td text-sm text-slate-600">{a.metrics?.wape != null ? `${a.metrics.wape}%` : '-'}</td>
                 <td className="table-td text-sm text-slate-600">{a.metrics?.r2 ?? '-'}</td>
                 <td className="table-td text-sm text-slate-600">{money(a.excess_value)}</td>

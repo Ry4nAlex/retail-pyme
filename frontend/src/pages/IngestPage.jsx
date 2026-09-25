@@ -39,6 +39,7 @@ export default function IngestPage({ embedded = false }) {
   const [thresholds, setThresholds] = useState({ over: 75, under: 30, target: 45 })
   const [replaceExisting, setReplaceExisting] = useState(false)
   const [runMl, setRunMl] = useState(true)
+  const [runWalkForward, setRunWalkForward] = useState(false)
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
   const [mlOnline, setMlOnline] = useState(null)
@@ -65,6 +66,7 @@ export default function IngestPage({ embedded = false }) {
     fd.append('target_coverage_days', thresholds.target)
     fd.append('replace_existing', replaceExisting)
     fd.append('run_ml', runMl)
+    fd.append('run_walk_forward', runWalkForward)
     setLoading(true)
     setResult(null)
     try {
@@ -147,7 +149,7 @@ export default function IngestPage({ embedded = false }) {
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-5">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-5">
           <div>
             <label className="field-label">Meses a pronosticar</label>
             <select className="field-input" value={horizon} onChange={(e) => setHorizon(Number(e.target.value))}>
@@ -157,6 +159,16 @@ export default function IngestPage({ embedded = false }) {
           <label className="flex items-center gap-2 mt-6 text-sm text-slate-600 cursor-pointer">
             <input type="checkbox" checked={runMl} onChange={(e) => setRunMl(e.target.checked)} className="rounded" />
             Ejecutar análisis ML (XGBoost)
+          </label>
+          <label className="flex items-center gap-2 mt-6 text-sm text-slate-600 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={runWalkForward}
+            onChange={(e) => setRunWalkForward(e.target.checked)}
+            disabled={!runMl}
+            className="rounded"
+          />
+            Validación temporal (Walk-forward)
           </label>
           <label className="flex items-center gap-2 mt-6 text-sm text-slate-600 cursor-pointer">
             <input type="checkbox" checked={replaceExisting} onChange={(e) => setReplaceExisting(e.target.checked)} className="rounded" />
@@ -221,7 +233,7 @@ export default function IngestPage({ embedded = false }) {
               <h3 className="font-semibold text-slate-800 text-sm mb-3 flex items-center gap-2"><Brain className="w-4 h-4 text-azure-500" /> Calidad del modelo XGBoost</h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {[
-                  ['Split objetivo', result.ml.metrics.target_split || `${result.ml.metrics.target_train_pct || result.ml.metrics.train_pct || 70}/${result.ml.metrics.target_val_pct || result.ml.metrics.val_pct || 20}/${result.ml.metrics.target_test_pct || result.ml.metrics.test_pct || 10}`],
+                  ['Split objetivo', result.ml.metrics.target_split || '80/20'],
                   ['Split efectivo', result.ml.metrics.effective_train_pct != null ? `${result.ml.metrics.effective_train_pct}/${result.ml.metrics.effective_val_pct ?? result.ml.metrics.val_pct ?? '-'}/${result.ml.metrics.effective_test_pct}` : '-'],
                   ['R²', result.ml.metrics.r2],
                   ['MAE', result.ml.metrics.mae],
@@ -238,7 +250,7 @@ export default function IngestPage({ embedded = false }) {
                 ))}
               </div>
               <p className="mt-3 text-xs text-slate-400">
-                Validación cronológica 70/20/10 · Train/Validación/Test: {result.ml.metrics.n_train}/{result.ml.metrics.n_val ?? '-'}/{result.ml.metrics.n_test} registros
+                Corte cronológico 80/20 por meses completos · Train/Test: {result.ml.metrics.n_train}/{result.ml.metrics.n_test} registros
               </p>
             </div>
           )}
