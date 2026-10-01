@@ -19,6 +19,7 @@ from app.forecasting import (
     run_full_analysis, prepare_monthly, build_training_frame,
     train_and_evaluate, recursive_forecast, analyze_overstock,
 )
+from app.full_paper_experiment import run_full_paper_experiment
 from app.schemas import TrainResult, AnalyzeResult
 
 MODELS_DIR = os.path.join(os.path.dirname(__file__), "..", "models")
@@ -79,6 +80,9 @@ async def analyze(
         raise HTTPException(400, "params no es un JSON válido")
     try:
         result = run_full_analysis(df, p)
+        if p.get("run_full_paper_experiment", False):
+            result.setdefault("metrics", {})
+            result["metrics"]["full_paper"] = (run_full_paper_experiment(df,p,))
     except ValueError as e:
         raise HTTPException(422, str(e))
     except Exception as e:

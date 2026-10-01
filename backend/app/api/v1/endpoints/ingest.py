@@ -233,7 +233,7 @@ async def _ml_analyze(ventas_std: pd.DataFrame, current_stock: dict, params: dic
     body = {**params, "current_stock": current_stock}
     url = f"{settings.ML_SERVICE_URL.rstrip('/')}/analyze"
     try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(timeout=900.0) as client:
             resp = await client.post(
                 url,
                 files={"file": ("ventas.csv", csv_bytes, "text/csv")},
@@ -259,6 +259,7 @@ async def ingest_all(
     run_ml: bool = Form(True),
     run_walk_forward: bool = Form(False),
     run_ablation: bool = Form(False),
+    run_full_paper_experiment: bool = Form(False),
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_admin),
 ):
@@ -418,7 +419,7 @@ async def ingest_all(
             "target_coverage_days": target_coverage_days,
             "run_walk_forward": run_walk_forward,
             "run_ablation": run_ablation,
-
+            "run_full_paper_experiment": run_full_paper_experiment,
         }
         t_ml = time.perf_counter()
         out = await _ml_analyze(ventas_std, current_stock, params)

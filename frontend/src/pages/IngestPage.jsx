@@ -31,7 +31,775 @@ function QuickLink({ icon: Icon, label, to }) {
     </button>
   )
 }
+function FullPaperResultsCard({ fullPaper }) {
+  if (!fullPaper) return null
 
+  const partition = fullPaper.partition || {}
+  const validation = fullPaper.validation || {}
+  const experiment = fullPaper.experiment || {}
+const ablation = experiment.ablation || []
+const search = fullPaper.hyperparameter_search || {}
+const bestSearch = search.best || {}
+
+const inventorySensitivity =
+  experiment.inventory_management?.sensitivity_30_45_60 || []
+
+const inventoryBaseline =
+  experiment.inventory_management?.baseline || {}
+
+const inventoryComparison =
+  experiment.inventory_management?.comparison || {}
+  const validationSummary = validation.summary || {}
+  const experimentMetrics = experiment.metrics || {}
+  const naive = experiment.naive || {}
+  const comparison = experiment.comparison_vs_naive || {}
+
+  const inventory =
+    experiment.inventory_management || {}
+
+  const inventoryProposed =
+    inventory.xgboost_policy || {}
+
+  const fmt = (value, digits = 2) => {
+    if (value === null || value === undefined) return '-'
+
+    const number = Number(value)
+
+    if (Number.isNaN(number)) return value
+
+    return number.toFixed(digits)
+  }
+
+  const fmtInt = (value) => {
+    if (value === null || value === undefined) return '-'
+
+    return Number(value).toLocaleString('es-PE')
+  }
+
+  const meanStd = (metric, digits = 4) => {
+    const data = validationSummary?.[metric]
+
+    if (
+      !data ||
+      data.mean === null ||
+      data.mean === undefined
+    ) {
+      return '-'
+    }
+
+    return `${fmt(data.mean, digits)} ± ${fmt(data.std, digits)}`
+  }
+
+  const periodLabel = (block) => {
+    if (!block?.period?.from) return '-'
+
+    return `${block.period.from} → ${block.period.to}`
+  }
+
+  return (
+    <div className="space-y-5">
+
+      {/* ================================================= */}
+      {/* DISEÑO EXPERIMENTAL */}
+      {/* ================================================= */}
+
+      <div className="card p-5">
+        <h3 className="font-semibold text-slate-800 mb-1 flex items-center gap-2">
+          <Brain className="w-4 h-4 text-azure-500" />
+          Diseño experimental del Full Paper
+        </h3>
+
+        <p className="text-xs text-slate-500 mb-4">
+          Separación cronológica entre desarrollo del modelo y experimento independiente.
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+
+          <div className="rounded-xl border border-slate-200 p-4">
+            <p className="text-xs text-slate-400">
+              Dataset completo
+            </p>
+
+            <p className="font-semibold text-slate-800 mt-1">
+              {periodLabel(partition.complete_dataset)}
+            </p>
+
+            <div className="mt-2 text-xs text-slate-500 space-y-1">
+              <p>
+                Meses: <b>{partition.complete_dataset?.months ?? '-'}</b>
+              </p>
+
+              <p>
+                Transacciones:{' '}
+                <b>
+                  {fmtInt(
+                    partition.complete_dataset?.transactions
+                  )}
+                </b>
+              </p>
+
+              <p>
+                Productos:{' '}
+                <b>{partition.complete_dataset?.products ?? '-'}</b>
+              </p>
+
+              <p>
+                Producto-mes:{' '}
+                <b>
+                  {fmtInt(
+                    partition.complete_dataset?.product_month
+                  )}
+                </b>
+              </p>
+
+              <p>
+                Observaciones supervisadas:{' '}
+                <b>
+                  {fmtInt(
+                    partition.complete_dataset
+                      ?.supervised_observations
+                  )}
+                </b>
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-azure-200 bg-azure-50/40 p-4">
+            <p className="text-xs text-azure-600 font-semibold">
+              DESARROLLO
+            </p>
+
+            <p className="font-semibold text-slate-800 mt-1">
+              {periodLabel(partition.development)}
+            </p>
+
+            <div className="mt-2 text-xs text-slate-500 space-y-1">
+              <p>
+                Meses:{' '}
+                <b>{partition.development?.months ?? '-'}</b>
+              </p>
+
+              <p>
+                Transacciones:{' '}
+                <b>
+                  {fmtInt(
+                    partition.development?.transactions
+                  )}
+                </b>
+              </p>
+
+              <p>
+                Productos:{' '}
+                <b>{partition.development?.products ?? '-'}</b>
+              </p>
+
+              <p>
+                Producto-mes:{' '}
+                <b>
+                  {fmtInt(
+                    partition.development?.product_month
+                  )}
+                </b>
+              </p>
+
+              <p>
+                Observaciones supervisadas:{' '}
+                <b>
+                  {fmtInt(
+                    partition.development
+                      ?.supervised_observations
+                  )}
+                </b>
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4">
+            <p className="text-xs text-emerald-600 font-semibold">
+              EXPERIMENTO INDEPENDIENTE
+            </p>
+
+            <p className="font-semibold text-slate-800 mt-1">
+              {periodLabel(partition.experiment)}
+            </p>
+
+            <div className="mt-2 text-xs text-slate-500 space-y-1">
+              <p>
+                Meses:{' '}
+                <b>{partition.experiment?.months ?? '-'}</b>
+              </p>
+
+              <p>
+                Transacciones:{' '}
+                <b>
+                  {fmtInt(
+                    partition.experiment?.transactions
+                  )}
+                </b>
+              </p>
+
+              <p>
+                Productos:{' '}
+                <b>{partition.experiment?.products ?? '-'}</b>
+              </p>
+
+              <p>
+                Producto-mes:{' '}
+                <b>
+                  {fmtInt(
+                    partition.experiment?.product_month
+                  )}
+                </b>
+              </p>
+
+              <p>
+                Casos evaluados:{' '}
+                <b>
+                  {fmtInt(
+                    partition.experiment
+                      ?.effective_evaluation_cases
+                  )}
+                </b>
+              </p>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      {/* ================================================= */}
+      {/* VALIDACIÓN */}
+      {/* ================================================= */}
+
+      <div className="card p-5">
+        <h3 className="font-semibold text-slate-800 mb-1">
+          Validación del modelo
+        </h3>
+
+        <p className="text-xs text-slate-500 mb-4">
+          Walk-forward realizado únicamente dentro del periodo de desarrollo.
+          Estos valores se utilizan para seleccionar y validar el modelo, no
+          como resultados finales del experimento.
+        </p>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+
+          <div className="rounded-xl border border-slate-200 p-3">
+            <p className="text-xs text-slate-400">
+              R²
+            </p>
+            <p className="text-lg font-bold text-slate-800">
+              {meanStd('r2', 4)}
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 p-3">
+            <p className="text-xs text-slate-400">
+              MAE
+            </p>
+            <p className="text-lg font-bold text-slate-800">
+              {meanStd('mae', 4)}
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 p-3">
+            <p className="text-xs text-slate-400">
+              RMSE
+            </p>
+            <p className="text-lg font-bold text-slate-800">
+              {meanStd('rmse', 4)}
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 p-3">
+            <p className="text-xs text-slate-400">
+              WAPE
+            </p>
+            <p className="text-lg font-bold text-slate-800">
+              {meanStd('wape', 4)} %
+            </p>
+          </div>
+
+        </div>
+
+        <div className="mt-4 text-xs text-slate-500 space-y-1">
+          <p>
+            Entrenamiento inicial:{' '}
+            <b>{validation.n_initial_train_months ?? '-'} meses</b>
+          </p>
+
+          <p>
+            Meses de validación:{' '}
+            <b>{validation.n_validation_months ?? '-'}</b>
+          </p>
+
+          <p>
+            Ventanas walk-forward:{' '}
+            <b>{validation.n_folds ?? '-'}</b>
+          </p>
+
+          <p>
+            Periodo de validación:{' '}
+            <b>
+              {validation.validation_period?.from ?? '-'}
+              {' → '}
+              {validation.validation_period?.to ?? '-'}
+            </b>
+          </p>
+        </div>
+      </div>
+
+      {/* ================================================= */}
+      {/* EXPERIMENTO ML */}
+      {/* ================================================= */}
+
+      <div className="card p-5">
+        <h3 className="font-semibold text-slate-800 mb-1">
+          Experimento final — Machine Learning
+        </h3>
+
+        <p className="text-xs text-slate-500 mb-4">
+          Resultados obtenidos exclusivamente sobre los meses reservados
+          para el experimento independiente.
+        </p>
+
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+
+          {[
+            ['R²', fmt(experimentMetrics.r2, 4)],
+            ['MAE', fmt(experimentMetrics.mae, 3)],
+            ['RMSE', fmt(experimentMetrics.rmse, 3)],
+            ['WAPE', `${fmt(experimentMetrics.wape, 2)} %`],
+            ['MAPE', `${fmt(experimentMetrics.mape, 2)} %`],
+          ].map(([label, value]) => (
+            <div
+              key={label}
+              className="rounded-xl border border-emerald-200 bg-emerald-50/30 p-3"
+            >
+              <p className="text-xs text-slate-400">
+                {label}
+              </p>
+
+              <p className="text-xl font-bold text-slate-800">
+                {value}
+              </p>
+            </div>
+          ))}
+
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+
+          <div className="rounded-xl border border-slate-200 p-4">
+            <p className="text-xs font-semibold text-slate-500 mb-3">
+              Baseline Naive
+            </p>
+
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <p>R²: <b>{fmt(naive.r2, 4)}</b></p>
+              <p>MAE: <b>{fmt(naive.mae, 3)}</b></p>
+              <p>RMSE: <b>{fmt(naive.rmse, 3)}</b></p>
+              <p>WAPE: <b>{fmt(naive.wape, 2)} %</b></p>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 p-4">
+            <p className="text-xs font-semibold text-slate-500 mb-3">
+              Mejora de XGBoost frente al Naive
+            </p>
+
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <p>
+                Δ R²:{' '}
+                <b>{fmt(comparison.r2_gain, 4)}</b>
+              </p>
+
+              <p>
+                ↓ MAE:{' '}
+                <b>
+                  {fmt(
+                    comparison.mae_reduction_pct,
+                    2
+                  )} %
+                </b>
+              </p>
+
+              <p>
+                ↓ RMSE:{' '}
+                <b>
+                  {fmt(
+                    comparison.rmse_reduction_pct,
+                    2
+                  )} %
+                </b>
+              </p>
+
+              <p>
+                ↓ WAPE:{' '}
+                <b>
+                  {fmt(
+                    comparison.wape_reduction_pct,
+                    2
+                  )} %
+                </b>
+              </p>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+{/* ================================================= */}
+{/* RANDOM SEARCH */}
+{/* ================================================= */}
+
+<div className="card p-5">
+  <h3 className="font-semibold text-slate-800 mb-1">
+    Selección de hiperparámetros
+  </h3>
+
+  <p className="text-xs text-slate-500 mb-4">
+    Random Search realizado únicamente sobre el periodo de desarrollo
+    mediante validación walk-forward.
+  </p>
+
+  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+    <div className="rounded-xl border border-slate-200 p-3">
+      <p className="text-xs text-slate-400">Configuraciones</p>
+      <p className="text-lg font-bold">
+        {search.n_trials ?? '-'}
+      </p>
+    </div>
+
+    <div className="rounded-xl border border-slate-200 p-3">
+      <p className="text-xs text-slate-400">WAPE validación</p>
+      <p className="text-lg font-bold">
+        {fmt(bestSearch.wape_mean, 4)} %
+      </p>
+    </div>
+
+    <div className="rounded-xl border border-slate-200 p-3">
+      <p className="text-xs text-slate-400">RMSE validación</p>
+      <p className="text-lg font-bold">
+        {fmt(bestSearch.rmse_mean, 4)}
+      </p>
+    </div>
+
+    <div className="rounded-xl border border-slate-200 p-3">
+      <p className="text-xs text-slate-400">R² validación</p>
+      <p className="text-lg font-bold">
+        {fmt(bestSearch.r2_mean, 4)}
+      </p>
+    </div>
+  </div>
+
+  <div className="text-xs text-slate-600 space-y-1">
+    <p>
+      n_estimators: <b>{bestSearch.params?.n_estimators ?? '-'}</b>
+    </p>
+    <p>
+      max_depth: <b>{bestSearch.params?.max_depth ?? '-'}</b>
+    </p>
+    <p>
+      learning_rate: <b>{bestSearch.params?.learning_rate ?? '-'}</b>
+    </p>
+    <p>
+      min_child_weight: <b>{bestSearch.params?.min_child_weight ?? '-'}</b>
+    </p>
+    <p>
+      subsample: <b>{bestSearch.params?.subsample ?? '-'}</b>
+    </p>
+    <p>
+      colsample_bytree: <b>{bestSearch.params?.colsample_bytree ?? '-'}</b>
+    </p>
+    <p>
+      reg_alpha: <b>{bestSearch.params?.reg_alpha ?? '-'}</b>
+    </p>
+    <p>
+      reg_lambda: <b>{bestSearch.params?.reg_lambda ?? '-'}</b>
+    </p>
+  </div>
+</div>
+
+{/* ================================================= */}
+{/* ABLACIÓN */}
+{/* ================================================= */}
+
+<div className="card p-5">
+  <h3 className="font-semibold text-slate-800 mb-1">
+    Experimento de ablación
+  </h3>
+
+  <p className="text-xs text-slate-500 mb-4">
+    Evaluación realizada exclusivamente sobre los seis meses
+    reservados para el experimento.
+  </p>
+
+  <div className="overflow-x-auto">
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="border-b text-left text-xs text-slate-500">
+          <th className="py-2">Configuración</th>
+          <th>Variables</th>
+          <th>R²</th>
+          <th>MAE</th>
+          <th>RMSE</th>
+          <th>WAPE</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {ablation.map((row) => (
+          <tr
+            key={row.configuration}
+            className="border-b border-slate-100"
+          >
+            <td className="py-2 font-medium">
+              {row.configuration}
+            </td>
+            <td>{row.n_features}</td>
+            <td>{fmt(row.r2, 4)}</td>
+            <td>{fmt(row.mae, 3)}</td>
+            <td>{fmt(row.rmse, 3)}</td>
+            <td>{fmt(row.wape, 2)} %</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+      {/* ================================================= */}
+      {/* GESTIÓN DE INVENTARIO */}
+      {/* ================================================= */}
+
+      <div className="card p-5">
+        <h3 className="font-semibold text-slate-800 mb-1 flex items-center gap-2">
+          <Boxes className="w-4 h-4 text-azure-500" />
+          Experimento final — Gestión de inventario
+        </h3>
+
+        <p className="text-xs text-slate-500 mb-4">
+          Indicadores calculados exclusivamente sobre los casos del
+          periodo experimental.
+        </p>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+
+          {[
+            [
+              'Nivel de servicio',
+              `${fmt(
+                inventoryProposed.service_level_pct,
+                3
+              )} %`
+            ],
+
+            [
+              'Demanda no atendida',
+              `${fmt(
+                inventoryProposed.stockout_units,
+                2
+              )} u`
+            ],
+
+            [
+              'Eventos de quiebre',
+              fmtInt(
+                inventoryProposed.stockout_events
+              )
+            ],
+
+            [
+              'Tasa de quiebre',
+              `${fmt(
+                inventoryProposed.stockout_rate_pct,
+                3
+              )} %`
+            ],
+
+            [
+              'Cobertura saludable',
+              `${fmt(
+                inventoryProposed
+                  .healthy_coverage_rate_pct,
+                3
+              )} %`
+            ],
+
+            [
+              'Sobrestock >75 días',
+              `${fmt(
+                inventoryProposed.overstock_rate_pct,
+                3
+              )} %`
+            ],
+
+            [
+              'Reposición sugerida',
+              `${fmt(
+                inventoryProposed.total_reorder_units,
+                2
+              )} u`
+            ],
+
+            [
+              'Inventario promedio',
+              `${fmt(
+                inventoryProposed
+                  .avg_month_end_inventory_units,
+                2
+              )} u`
+            ],
+          ].map(([label, value]) => (
+            <div
+              key={label}
+              className="rounded-xl border border-slate-200 p-3"
+            >
+              <p className="text-xs text-slate-400">
+                {label}
+              </p>
+
+              <p className="text-lg font-bold text-slate-800">
+                {value}
+              </p>
+            </div>
+          ))}
+
+        </div>
+
+        <div className="mt-3 text-xs text-slate-500">
+          <p>
+            Exceso sobre cobertura objetivo:{' '}
+            <b>
+              {fmt(
+                inventoryProposed.excess_units,
+                2
+              )} unidades
+            </b>
+          </p>
+
+          <p>
+            Cobertura promedio:{' '}
+            <b>
+              {fmt(
+                inventoryProposed.avg_coverage_days,
+                2
+              )} días
+            </b>
+          </p>
+
+          <p>
+            Casos evaluados:{' '}
+            <b>
+              {fmtInt(
+                inventoryProposed.evaluation_cases
+              )}
+            </b>
+          </p>
+        </div>
+      </div>
+      {/* ================================================= */}
+{/* SENSIBILIDAD DE INVENTARIO */}
+{/* ================================================= */}
+
+<div className="card p-5">
+  <h3 className="font-semibold text-slate-800 mb-1">
+    Sensibilidad de la cobertura objetivo
+  </h3>
+
+  <p className="text-xs text-slate-500 mb-4">
+    Comparación experimental de coberturas objetivo de 30, 45 y 60 días.
+    El umbral de sobrestock permanece en 75 días.
+  </p>
+
+  <div className="overflow-x-auto">
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="border-b text-left text-xs text-slate-500">
+          <th className="py-2">Cobertura</th>
+          <th>Servicio</th>
+          <th>Quiebres</th>
+          <th>Tasa quiebre</th>
+          <th>Sobrestock</th>
+          <th>Inventario prom.</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {inventorySensitivity.map((row) => (
+          <tr
+            key={row.target_coverage_days}
+            className="border-b border-slate-100"
+          >
+            <td className="py-2 font-medium">
+              {fmt(row.target_coverage_days, 0)} días
+            </td>
+
+            <td>
+              {fmt(row.service_level_pct, 3)} %
+            </td>
+
+            <td>
+              {fmtInt(row.stockout_events)}
+            </td>
+
+            <td>
+              {fmt(row.stockout_rate_pct, 3)} %
+            </td>
+
+            <td>
+              {fmtInt(row.overstock_events_75d)}
+            </td>
+
+            <td>
+              {fmt(
+                row.avg_month_end_inventory_units,
+                2
+              )}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+
+  <div className="mt-4 rounded-xl border border-slate-200 p-4">
+    <p className="text-xs font-semibold text-slate-500 mb-2">
+      Política propuesta vs. referencia histórica
+    </p>
+
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
+      <p>
+        Quiebres baseline:{' '}
+        <b>{fmtInt(inventoryBaseline.stockout_events)}</b>
+      </p>
+
+      <p>
+        Reducción de eventos:{' '}
+        <b>
+          {fmt(
+            inventoryComparison.stockout_events_reduction_pct,
+            2
+          )} %
+        </b>
+      </p>
+
+      <p>
+        Reducción de demanda no atendida:{' '}
+        <b>
+          {fmt(
+            inventoryComparison.stockout_units_reduction_pct,
+            2
+          )} %
+        </b>
+      </p>
+    </div>
+  </div>
+</div>
+    </div>
+  )
+}
 export default function IngestPage({ embedded = false }) {
   const [files, setFiles] = useState([])           // hasta 2
   const [horizon, setHorizon] = useState(3)
@@ -41,6 +809,7 @@ export default function IngestPage({ embedded = false }) {
   const [runMl, setRunMl] = useState(true)
   const [runWalkForward, setRunWalkForward] = useState(false)
   const [runAblation, setRunAblation] = useState(false)
+  const [runFullPaperExperiment, setRunFullPaperExperiment] = useState(false)
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
   const [mlOnline, setMlOnline] = useState(null)
@@ -67,8 +836,9 @@ export default function IngestPage({ embedded = false }) {
     fd.append('target_coverage_days', thresholds.target)
     fd.append('replace_existing', replaceExisting)
     fd.append('run_ml', runMl)
-    fd.append('run_walk_forward', runWalkForward)
-    fd.append('run_ablation', runAblation)
+    fd.append('run_walk_forward',runFullPaperExperiment ? false : runWalkForward)
+    fd.append('run_ablation',runFullPaperExperiment ? false : runAblation)
+    fd.append('run_full_paper_experiment',runFullPaperExperiment)
     setLoading(true)
     setResult(null)
     try {
@@ -151,7 +921,7 @@ export default function IngestPage({ embedded = false }) {
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mt-5">
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mt-5">
           <div>
             <label className="field-label">Meses a pronosticar</label>
             <select className="field-input" value={horizon} onChange={(e) => setHorizon(Number(e.target.value))}>
@@ -167,7 +937,7 @@ export default function IngestPage({ embedded = false }) {
             type="checkbox"
             checked={runWalkForward}
             onChange={(e) => setRunWalkForward(e.target.checked)}
-            disabled={!runMl}
+            disabled={!runMl || runFullPaperExperiment}
             className="rounded"
           />
             Validación temporal (Walk-forward)
@@ -177,10 +947,29 @@ export default function IngestPage({ embedded = false }) {
     type="checkbox"
     checked={runAblation}
     onChange={(e) => setRunAblation(e.target.checked)}
-    disabled={!runMl}
+    disabled={!runMl || runFullPaperExperiment}
     className="rounded"
   />
   Experimento de ablación
+</label>
+<label className="flex items-center gap-2 mt-6 text-sm text-slate-600 cursor-pointer">
+  <input
+  type="checkbox"
+  checked={runFullPaperExperiment}
+  onChange={(e) => {
+    const checked = e.target.checked
+
+    setRunFullPaperExperiment(checked)
+
+    if (checked) {
+      setRunWalkForward(false)
+      setRunAblation(false)
+    }
+  }}
+  disabled={!runMl}
+  className="rounded"
+/>
+  Evaluación Full Paper (42 + 6)
 </label>
           <label className="flex items-center gap-2 mt-6 text-sm text-slate-600 cursor-pointer">
             <input type="checkbox" checked={replaceExisting} onChange={(e) => setReplaceExisting(e.target.checked)} className="rounded" />
@@ -240,7 +1029,7 @@ export default function IngestPage({ embedded = false }) {
             )}
           </div>
 
-          {result.ml?.metrics && (
+          {result.ml?.metrics && !result.ml.metrics.full_paper && (
             <div className="card p-5">
               <h3 className="font-semibold text-slate-800 text-sm mb-3 flex items-center gap-2"><Brain className="w-4 h-4 text-azure-500" /> Calidad del modelo XGBoost</h3>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -266,6 +1055,12 @@ export default function IngestPage({ embedded = false }) {
               </p>
             </div>
           )}
+
+          {result.ml?.metrics?.full_paper && (
+  <FullPaperResultsCard
+    fullPaper={result.ml.metrics.full_paper}
+  />
+)}
 
           <div className="card p-5">
             <h3 className="font-semibold text-slate-800 text-sm mb-3">Ya puedes revisar</h3>
