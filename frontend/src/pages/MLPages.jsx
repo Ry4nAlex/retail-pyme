@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { mlService } from '../services/api'
 import IngestPage from './IngestPage'
 import {
@@ -1125,6 +1126,8 @@ export function PredictionsPage() {
 
   const summary = result?.summary
   const metrics = result?.metrics
+  const hasFullPaper = Boolean(metrics?.full_paper)
+
   const cloud = result?.cloud_metrics
   // Si se verificó en vivo, actualiza la disponibilidad del análisis guardado
   const cloudMerged = cloud ? {
@@ -1205,44 +1208,114 @@ export function PredictionsPage() {
             </div>
           )}
 
-          {(metrics || cloudMerged) && (
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-              <ModelQualityCard metrics={metrics} />
-              <ValidationChart evalSeries={metrics?.eval_series} />
-            </div>
-          )}
-          
-          {(
-            metrics?.eval_series_by_product?.length > 0 ||
-            metrics?.error_by_category?.length > 0
-          ) && (
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+          {hasFullPaper ? (
 
-              <ProductPredictionChart
-                products={metrics?.eval_series_by_product}
-              />
+  <div className="card p-5 border border-blue-200 bg-blue-50/30">
 
-              <CategoryErrorCard
-                rows={metrics?.error_by_category}
-              />
+    <div className="flex items-start justify-between gap-4 flex-wrap">
 
-            </div>
-          )}
+      <div>
 
-          <BaselineComparisonCard
-  metrics={metrics}
-/>
+        <p className="font-semibold text-slate-800">
+          Evaluación experimental disponible
+        </p>
 
-<WalkForwardCard
-  walkForward={metrics?.walk_forward}
-/>
+        <p className="text-sm text-slate-500 mt-1">
+          Este análisis utiliza la metodología Full Paper:
+          42 meses para desarrollo y 6 meses independientes
+          para el experimento.
+        </p>
 
-<CloudMetricsCard
-  cloud={cloudMerged}
-  benchmark={cloudBenchmark}
-  onRefresh={refreshCloud}
-  refreshing={refreshingCloud}
-/>
+      </div>
+
+
+      <Link
+        to="/ml/evaluation"
+        className="btn-primary"
+      >
+        Ver resultados experimentales
+      </Link>
+
+    </div>
+
+  </div>
+
+) : (
+
+  <>
+
+    {(metrics || cloudMerged) && (
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+
+        <ModelQualityCard
+          metrics={metrics}
+        />
+
+        <ValidationChart
+          evalSeries={
+            metrics?.eval_series
+          }
+        />
+
+      </div>
+
+    )}
+
+
+    {(
+      metrics
+        ?.eval_series_by_product
+        ?.length > 0
+      ||
+      metrics
+        ?.error_by_category
+        ?.length > 0
+    ) && (
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+
+        <ProductPredictionChart
+          products={
+            metrics
+              ?.eval_series_by_product
+          }
+        />
+
+        <CategoryErrorCard
+          rows={
+            metrics
+              ?.error_by_category
+          }
+        />
+
+      </div>
+
+    )}
+
+
+    <BaselineComparisonCard
+      metrics={metrics}
+    />
+
+
+    <WalkForwardCard
+      walkForward={
+        metrics?.walk_forward
+      }
+    />
+
+
+    <CloudMetricsCard
+      cloud={cloudMerged}
+      benchmark={cloudBenchmark}
+      onRefresh={refreshCloud}
+      refreshing={refreshingCloud}
+    />
+
+  </>
+
+)}
 
           {selectedProduct && (
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">

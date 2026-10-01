@@ -7,6 +7,7 @@ import { ForgotPasswordPage, ResetPasswordPage } from './pages/PasswordPages'
 import DashboardPage from './pages/DashboardPage'
 import { DatasetsPage, PredictionsPage } from './pages/MLPages'
 import StockAnalysisPage from './pages/StockAnalysisPage'
+import ExperimentalEvaluationPage from './pages/ExperimentalEvaluationPage'
 import { ProductsPage, SalesPage, InventoryPage, CategoriesPage, UsersPage, CompaniesPage } from './pages/AppPages'
 
 function Private({ children, adminOnly, superOnly, blockSuper }) {
@@ -39,7 +40,10 @@ function AppRoutes() {
       <Route path="/categories"   element={<Private blockSuper><CategoriesPage /></Private>} />
       <Route path="/ml/datasets"  element={<Private adminOnly blockSuper><DatasetsPage /></Private>} />
       <Route path="/ml/predictions" element={<Private blockSuper><PredictionsPage /></Private>} />
-      <Route path="/ml/stock-analysis" element={<Private blockSuper><StockAnalysisPage /></Private>} />      
+      <Route path="/ml/stock-analysis" element={<Private blockSuper><StockAnalysisPage /></Private>} />
+      <Route path="/ml/evaluation" element={<Private adminOnly blockSuper><ExperimentalEvaluationPage /></Private>
+  }
+/>      
       <Route path="/users"        element={<Private adminOnly><UsersPage /></Private>} />
       <Route path="/companies"    element={<Private superOnly><CompaniesPage /></Private>} />
 

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { mlService } from '../services/api'
 import {
   Upload, FileText, Loader2, PackageSearch, AlertTriangle, TrendingUp,
@@ -33,6 +34,68 @@ const formatDateTimePE = (value) => {
   return date.toLocaleString('es-PE', {
     timeZone: 'America/Lima',
   })
+}
+const analysisDisplayMetrics = (analysis) => {
+
+  const fullPaper =
+    analysis
+      ?.metrics
+      ?.full_paper
+
+  if (fullPaper) {
+
+    const experiment =
+      fullPaper
+        ?.experiment
+        ?.metrics
+      || {}
+
+    return {
+      isFullPaper:
+        true,
+
+      split:
+        `${
+          fullPaper
+            ?.design
+            ?.development_months
+          ?? 42
+        }+${
+
+          fullPaper
+            ?.design
+            ?.experiment_months
+          ?? 6
+        }`,
+
+      wape:
+        experiment.wape,
+
+      r2:
+        experiment.r2,
+    }
+  }
+
+  return {
+    isFullPaper:
+      false,
+
+    split:
+      analysis
+        ?.metrics
+        ?.target_split
+      || '80/20',
+
+    wape:
+      analysis
+        ?.metrics
+        ?.wape,
+
+    r2:
+      analysis
+        ?.metrics
+        ?.r2,
+  }
 }
 const monthLabel = (iso) => {
   const d = new Date(iso + 'T00:00:00')
@@ -680,6 +743,12 @@ export default function StockAnalysisPage() {
   }
 
   const summary = result?.summary
+  const hasFullPaper =
+  Boolean(
+    result
+      ?.metrics
+      ?.full_paper
+  )
   const products = (result?.products || []).filter((p) => filter === 'todos' || p.status === filter)
 
   return (
@@ -763,7 +832,46 @@ export default function StockAnalysisPage() {
             <SummaryCard icon={DollarSign} label="Capital inmovilizado" value={money(summary.total_excess_value)} sub="en exceso de stock" color="#8b5cf6" />
           </div>
 
-          <RetailMetricsCard metrics={result.metrics} importance={result.feature_importance} />
+          {hasFullPaper ? (
+
+  <div className="card p-5 border border-blue-200 bg-blue-50/30">
+
+    <div className="flex items-start justify-between gap-4 flex-wrap">
+
+      <div>
+
+        <p className="font-semibold text-slate-800">
+          Evaluación Full Paper disponible
+        </p>
+
+        <p className="text-sm text-slate-500 mt-1">
+          Las métricas de validación, experimento,
+          ablación y gestión se encuentran en el
+          módulo Evaluación experimental.
+        </p>
+
+      </div>
+
+
+      <Link
+        to="/ml/evaluation"
+        className="btn-primary"
+      >
+        Ver evaluación experimental
+      </Link>
+
+    </div>
+
+  </div>
+
+) : (
+
+  <RetailMetricsCard
+    metrics={result.metrics}
+    importance={result.feature_importance}
+  />
+
+)}
           <AblationExperimentCard ablation={result?.metrics?.ablation} />
           <div className="table-wrapper">
             <div className="card-header">
@@ -803,19 +911,104 @@ export default function StockAnalysisPage() {
           <tbody>
             {analyses.length === 0 ? (
               <tr><td colSpan={9} className="text-center py-10 text-slate-400 text-sm">Aún no hay análisis</td></tr>
-            ) : analyses.map((a) => (
-              <tr key={a.id} className="table-row cursor-pointer" onClick={() => openAnalysis(a.id)}>
-                <td className="table-td text-sm font-medium text-slate-700">{a.source_filename}</td>
-                <td className="table-td text-xs text-slate-400">{formatDateTimePE(a.created_at)}</td>
-                <td className="table-td text-sm text-slate-600">{a.total_products}</td>
-                <td className="table-td"><span className={a.overstock_count > 0 ? 'badge-red' : 'badge-slate'}>{a.overstock_count}</span></td>
-                <td className="table-td text-sm text-slate-600">{a.metrics?.target_split || '80/20'}</td>
-                <td className="table-td text-sm text-slate-600">{a.metrics?.wape != null ? `${a.metrics.wape}%` : '-'}</td>
-                <td className="table-td text-sm text-slate-600">{a.metrics?.r2 ?? '-'}</td>
-                <td className="table-td text-sm text-slate-600">{money(a.excess_value)}</td>
-                <td className="table-td"><button onClick={(e) => removeAnalysis(a.id, e)} className="btn-ghost py-1 px-2 text-red-500 hover:bg-red-50"><Trash2 className="w-3.5 h-3.5" /></button></td>
-              </tr>
-            ))}
+            ) : analyses.map((a) => {
+
+  const display =
+    analysisDisplayMetrics(a)
+
+  return (
+
+    <tr
+      key={a.id}
+      className="table-row cursor-pointer"
+      onClick={() =>
+        openAnalysis(a.id)
+      }
+    >
+
+      <td className="table-td text-sm font-medium text-slate-700">
+        {a.source_filename}
+      </td>
+
+      <td className="table-td text-xs text-slate-400">
+        {
+          formatDateTimePE(
+            a.created_at
+          )
+        }
+      </td>
+
+      <td className="table-td text-sm text-slate-600">
+        {a.total_products}
+      </td>
+
+      <td className="table-td">
+        <span
+          className={
+            a.overstock_count > 0
+              ? 'badge-red'
+              : 'badge-slate'
+          }
+        >
+          {a.overstock_count}
+        </span>
+      </td>
+
+      <td className="table-td text-sm text-slate-600">
+
+        {display.isFullPaper ? (
+
+          <span className="badge-blue">
+            {display.split} meses
+          </span>
+
+        ) : (
+
+          display.split
+
+        )}
+
+      </td>
+
+      <td className="table-td text-sm text-slate-600">
+        {
+          display.wape != null
+            ? `${display.wape}%`
+            : '-'
+        }
+      </td>
+
+      <td className="table-td text-sm text-slate-600">
+        {
+          display.r2
+          ?? '-'
+        }
+      </td>
+
+      <td className="table-td text-sm text-slate-600">
+        {money(a.excess_value)}
+      </td>
+
+      <td className="table-td">
+
+        <button
+          onClick={(e) =>
+            removeAnalysis(
+              a.id,
+              e
+            )
+          }
+          className="btn-ghost py-1 px-2 text-red-500 hover:bg-red-50"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+
+      </td>
+
+    </tr>
+
+  )
+})}
           </tbody>
         </table>
       </div>

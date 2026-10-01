@@ -25,7 +25,7 @@ import httpx
 import numpy as np
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
@@ -300,11 +300,59 @@ async def ingest_all(
     ventas_std = _standardize_sales(ventas_df)
     catalog = _build_catalog(prod_df, ventas_std)
 
-    # 2) (Opcional) limpiar carga previa de la empresa
+    # 2) (Opcional) reemplazar la carga operativa anterior
     if replace_existing:
-        existing = (await db.execute(select(Product).where(Product.company_id == cid))).scalars().all()
-        for p in existing:
-            p.active = False
+        # -------------------------------------------------
+    # Eliminar líneas de ventas anteriores
+    # de esta empresa.
+    # -------------------------------------------------
+        company_sale_ids = (
+        select(Sale.id)
+        .where(
+            Sale.company_id == cid
+        )
+    )
+
+    await db.execute(
+        delete(SaleItem)
+        .where(
+            SaleItem.sale_id.in_(
+                company_sale_ids
+            )
+        )
+    )
+
+    # -------------------------------------------------
+    # Eliminar comprobantes anteriores.
+    # -------------------------------------------------
+
+    await db.execute(
+        delete(Sale)
+        .where(
+            Sale.company_id == cid
+        )
+    )
+
+    # -------------------------------------------------
+    # Los productos no se eliminan para evitar
+    # romper referencias históricas.
+    # Se desactivan y luego el catálogo actual
+    # los vuelve a activar mediante el upsert.
+    # -------------------------------------------------
+
+    existing = (
+        await db.execute(
+            select(Product)
+            .where(
+                Product.company_id == cid
+            )
+        )
+    ).scalars().all()
+
+    for p in existing:
+        p.active = False
+
+    await db.flush()
 
     # 3) Upsert de categorías
     cats = {}  # nombre_norm -> Category

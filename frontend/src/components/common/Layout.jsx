@@ -24,6 +24,7 @@ const NAV = {
     { to: '/ml/datasets', icon: Database, label: 'Conjunto de datos' },
     { to: '/ml/predictions', icon: Brain, label: 'Predicciones' },
     { to: '/ml/stock-analysis', icon: PackageSearch, label: 'Analisis de stock' },
+    { to: '/ml/evaluation', icon: Brain, label: 'Evaluacion experimental' },
     { divider: true, label: 'Administracion' },
     { to: '/users', icon: UserCog, label: 'Usuarios' },
   ],

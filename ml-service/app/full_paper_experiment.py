@@ -1345,6 +1345,7 @@ def _partition_summary(
     series,
     full,
     experiment_months=6,
+    train_ratio=0.80,
 ):
 
     cols = _resolve_columns(raw_df)
@@ -1375,6 +1376,10 @@ def _partition_summary(
         .dt.start_time
     )
 
+    # =====================================================
+    # DATASET COMPLETO / DESARROLLO / EXPERIMENTO
+    # =====================================================
+
     months = sorted(
         raw["m"].unique()
     )
@@ -1384,34 +1389,140 @@ def _partition_summary(
     )
 
     raw_dev = raw[
-        raw["m"]
-        < experiment_start
-    ]
+        raw["m"] < experiment_start
+    ].copy()
 
     raw_exp = raw[
-        raw["m"]
-        >= experiment_start
-    ]
+        raw["m"] >= experiment_start
+    ].copy()
 
     series_dev = series[
-        series["m"]
-        < experiment_start
-    ]
+        series["m"] < experiment_start
+    ].copy()
 
     series_exp = series[
-        series["m"]
-        >= experiment_start
-    ]
+        series["m"] >= experiment_start
+    ].copy()
 
     full_dev = full[
-        full["m"]
-        < experiment_start
-    ]
+        full["m"] < experiment_start
+    ].copy()
 
     full_exp = full[
-        full["m"]
-        >= experiment_start
-    ]
+        full["m"] >= experiment_start
+    ].copy()
+
+    # =====================================================
+    # TRAIN / VALIDACIÓN DENTRO DEL DESARROLLO
+    # =====================================================
+
+    train_months, validation_months = (
+        _development_train_validation_months(
+            full_dev,
+            train_ratio=train_ratio,
+        )
+    )
+
+    train_first_supervised = pd.Timestamp(
+        train_months[0]
+    )
+
+    train_last = pd.Timestamp(
+        train_months[-1]
+    )
+
+    validation_first = pd.Timestamp(
+        validation_months[0]
+    )
+
+    validation_last = pd.Timestamp(
+        validation_months[-1]
+    )
+
+    # -----------------------------------------------------
+    # TRAIN histórico
+    #
+    # Incluye también los primeros meses usados únicamente
+    # para construir Lag_1, Lag_2, Lag_3 y medias móviles.
+    # -----------------------------------------------------
+
+    raw_train = raw_dev[
+        raw_dev["m"] <= train_last
+    ].copy()
+
+    series_train = series_dev[
+        series_dev["m"] <= train_last
+    ].copy()
+
+    full_train = full_dev[
+        full_dev["m"].isin(
+            train_months
+        )
+    ].copy()
+
+    # -----------------------------------------------------
+    # VALIDACIÓN
+    #
+    # Estos meses ya cuentan con historia previa suficiente,
+    # por lo que todas sus observaciones producto-mes pueden
+    # utilizarse como casos supervisados.
+    # -----------------------------------------------------
+
+    raw_validation = raw_dev[
+        (
+            raw_dev["m"] >= validation_first
+        )
+        &
+        (
+            raw_dev["m"] <= validation_last
+        )
+    ].copy()
+
+    series_validation = series_dev[
+        (
+            series_dev["m"] >= validation_first
+        )
+        &
+        (
+            series_dev["m"] <= validation_last
+        )
+    ].copy()
+
+    full_validation = full_dev[
+        full_dev["m"].isin(
+            validation_months
+        )
+    ].copy()
+
+    historical_train_months = int(
+        raw_train["m"].nunique()
+    )
+
+    supervised_train_months = int(
+        full_train["m"].nunique()
+    )
+
+    history_only_months = (
+        historical_train_months
+        - supervised_train_months
+    )
+
+    total_supervised_development = (
+        len(full_train)
+        + len(full_validation)
+    )
+
+    train_pct = (
+        len(full_train)
+        / total_supervised_development
+        * 100
+    )
+
+    validation_pct = (
+        len(full_validation)
+        / total_supervised_development
+        * 100
+    )
 
     return {
         "complete_dataset": {
@@ -1484,6 +1595,138 @@ def _partition_summary(
 
             "supervised_observations":
                 int(len(full_dev)),
+        },
+
+        # =================================================
+        # NUEVO: DETALLE TRAIN / VALIDACIÓN
+        # =================================================
+
+        "development_split": {
+            "target_split":
+                "80/20",
+
+            "effective_train_pct":
+                round(
+                    train_pct,
+                    2,
+                ),
+
+            "effective_validation_pct":
+                round(
+                    validation_pct,
+                    2,
+                ),
+
+            "train": {
+                "period": {
+                    "from":
+                        pd.Timestamp(
+                            raw_train["m"].min()
+                        ).date().isoformat(),
+
+                    "to":
+                        train_last.date().isoformat(),
+                },
+
+                "supervised_target_period": {
+                    "from":
+                        train_first_supervised
+                        .date()
+                        .isoformat(),
+
+                    "to":
+                        train_last
+                        .date()
+                        .isoformat(),
+                },
+
+                "historical_months":
+                    historical_train_months,
+
+                "supervised_months":
+                    supervised_train_months,
+
+                "history_only_months":
+                    int(
+                        history_only_months
+                    ),
+
+                "transactions":
+                    int(
+                        len(raw_train)
+                    ),
+
+                "products":
+                    int(
+                        raw_train[
+                            "product_id"
+                        ].nunique()
+                    ),
+
+                "product_month":
+                    int(
+                        len(series_train)
+                    ),
+
+                "supervised_observations":
+                    int(
+                        len(full_train)
+                    ),
+            },
+
+            "validation": {
+                "period": {
+                    "from":
+                        validation_first
+                        .date()
+                        .isoformat(),
+
+                    "to":
+                        validation_last
+                        .date()
+                        .isoformat(),
+                },
+
+                "historical_months":
+                    int(
+                        raw_validation[
+                            "m"
+                        ].nunique()
+                    ),
+
+                "supervised_months":
+                    int(
+                        full_validation[
+                            "m"
+                        ].nunique()
+                    ),
+
+                "transactions":
+                    int(
+                        len(raw_validation)
+                    ),
+
+                "products":
+                    int(
+                        raw_validation[
+                            "product_id"
+                        ].nunique()
+                    ),
+
+                "product_month":
+                    int(
+                        len(
+                            series_validation
+                        )
+                    ),
+
+                "supervised_observations":
+                    int(
+                        len(
+                            full_validation
+                        )
+                    ),
+            },
         },
 
         "experiment": {
@@ -1589,12 +1832,16 @@ def run_full_paper_experiment(
     )
 
     partition = _partition_summary(
-        df,
-        series,
-        full,
-        experiment_months=
-            experiment_months,
-    )
+    df,
+    series,
+    full,
+
+    experiment_months=
+        experiment_months,
+
+    train_ratio=
+        validation_train_ratio,
+)
 
     # -----------------------------------------
     # Random Search SOLO sobre desarrollo
@@ -1816,7 +2063,7 @@ def run_full_paper_experiment(
 
             "inventory_management":
                 inventory_experiment,
-                
+
             "feature_importance": {
                 k:
                     round(

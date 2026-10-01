@@ -31,10 +31,16 @@ function QuickLink({ icon: Icon, label, to }) {
     </button>
   )
 }
-function FullPaperResultsCard({ fullPaper }) {
+export function FullPaperResultsCard({ fullPaper }) {
   if (!fullPaper) return null
 
   const partition = fullPaper.partition || {}
+  const developmentSplit =
+  partition.development_split || {}
+  const trainPartition =
+  developmentSplit.train || {}
+  const validationPartition =
+  developmentSplit.validation || {}
   const validation = fullPaper.validation || {}
   const experiment = fullPaper.experiment || {}
 const ablation = experiment.ablation || []
@@ -282,6 +288,168 @@ const inventoryComparison =
           como resultados finales del experimento.
         </p>
 
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+
+  {/* TRAIN */}
+  <div className="rounded-xl border border-blue-200 bg-blue-50/30 p-4">
+
+    <p className="text-xs font-semibold text-blue-600">
+      TRAIN — Entrenamiento
+    </p>
+
+    <p className="font-semibold text-slate-800 mt-1">
+      {periodLabel(trainPartition)}
+    </p>
+
+    <div className="mt-3 text-xs text-slate-500 space-y-1">
+
+      <p>
+        Meses históricos:{' '}
+        <b>
+          {trainPartition.historical_months ?? '-'}
+        </b>
+      </p>
+
+      <p>
+        Meses supervisados:{' '}
+        <b>
+          {trainPartition.supervised_months ?? '-'}
+        </b>
+      </p>
+
+      <p>
+        Meses usados solo como historial:{' '}
+        <b>
+          {trainPartition.history_only_months ?? '-'}
+        </b>
+      </p>
+
+      <p>
+        Transacciones reales:{' '}
+        <b>
+          {fmtInt(
+            trainPartition.transactions
+          )}
+        </b>
+      </p>
+
+      <p>
+        Productos:{' '}
+        <b>
+          {trainPartition.products ?? '-'}
+        </b>
+      </p>
+
+      <p>
+        Producto-mes:{' '}
+        <b>
+          {fmtInt(
+            trainPartition.product_month
+          )}
+        </b>
+      </p>
+
+      <p>
+        Casos supervisados:{' '}
+        <b>
+          {fmtInt(
+            trainPartition
+              .supervised_observations
+          )}
+        </b>
+      </p>
+
+      <p className="pt-2 text-slate-400">
+        Targets supervisados:{' '}
+        <b>
+          {
+            trainPartition
+              .supervised_target_period
+              ?.from ?? '-'
+          }
+          {' → '}
+          {
+            trainPartition
+              .supervised_target_period
+              ?.to ?? '-'
+          }
+        </b>
+      </p>
+
+    </div>
+  </div>
+
+
+  {/* VALIDACIÓN */}
+  <div className="rounded-xl border border-amber-200 bg-amber-50/30 p-4">
+
+    <p className="text-xs font-semibold text-amber-600">
+      VALIDACIÓN
+    </p>
+
+    <p className="font-semibold text-slate-800 mt-1">
+      {periodLabel(validationPartition)}
+    </p>
+
+    <div className="mt-3 text-xs text-slate-500 space-y-1">
+
+      <p>
+        Meses:{' '}
+        <b>
+          {validationPartition.historical_months ?? '-'}
+        </b>
+      </p>
+
+      <p>
+        Transacciones reales:{' '}
+        <b>
+          {fmtInt(
+            validationPartition.transactions
+          )}
+        </b>
+      </p>
+
+      <p>
+        Productos:{' '}
+        <b>
+          {validationPartition.products ?? '-'}
+        </b>
+      </p>
+
+      <p>
+        Producto-mes:{' '}
+        <b>
+          {fmtInt(
+            validationPartition.product_month
+          )}
+        </b>
+      </p>
+
+      <p>
+        Casos supervisados:{' '}
+        <b>
+          {fmtInt(
+            validationPartition
+              .supervised_observations
+          )}
+        </b>
+      </p>
+
+      <p className="pt-2 text-slate-400">
+        Participación sobre casos supervisados:{' '}
+        <b>
+          {
+            developmentSplit
+              .effective_validation_pct ?? '-'
+          } %
+        </b>
+      </p>
+
+    </div>
+  </div>
+
+</div>
+
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
 
           <div className="rounded-xl border border-slate-200 p-3">
@@ -324,10 +492,17 @@ const inventoryComparison =
 
         <div className="mt-4 text-xs text-slate-500 space-y-1">
           <p>
-            Entrenamiento inicial:{' '}
-            <b>{validation.n_initial_train_months ?? '-'} meses</b>
+            Meses supervisados iniciales de Train:{' '}
+<b>{validation.n_initial_train_months ?? '-'} meses</b>
           </p>
-
+<p>
+  División supervisada efectiva:{' '}
+  <b>
+    {developmentSplit.effective_train_pct ?? '-'} %
+    {' / '}
+    {developmentSplit.effective_validation_pct ?? '-'} %
+  </b>
+</p>
           <p>
             Meses de validación:{' '}
             <b>{validation.n_validation_months ?? '-'}</b>
@@ -1057,9 +1232,26 @@ export default function IngestPage({ embedded = false }) {
           )}
 
           {result.ml?.metrics?.full_paper && (
-  <FullPaperResultsCard
-    fullPaper={result.ml.metrics.full_paper}
-  />
+  <div className="card p-5 border border-emerald-200 bg-emerald-50/30">
+    <div className="flex items-start justify-between gap-4 flex-wrap">
+      <div>
+        <p className="font-semibold text-slate-800">
+          Evaluación experimental completada
+        </p>
+
+        <p className="text-sm text-slate-500 mt-1">
+          Los resultados de desarrollo, validación, experimento,
+          ablación e inventario fueron guardados correctamente.
+        </p>
+      </div>
+
+      <QuickLink
+        icon={Brain}
+        label="Ver evaluación experimental"
+        to="/ml/evaluation"
+      />
+    </div>
+  </div>
 )}
 
           <div className="card p-5">
@@ -1070,6 +1262,7 @@ export default function IngestPage({ embedded = false }) {
               <QuickLink icon={ShoppingCart} label="Ventas" to="/sales" />
               <QuickLink icon={PackageSearch} label="Análisis de stock" to="/ml/stock-analysis" />
               <QuickLink icon={Brain} label="Predicciones" to="/ml/predictions" />
+              <QuickLink icon={Brain} label="Evaluación experimental" to="/ml/evaluation"/>
             </div>
           </div>
         </div>
