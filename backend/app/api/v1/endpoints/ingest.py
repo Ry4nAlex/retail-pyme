@@ -302,57 +302,37 @@ async def ingest_all(
 
     # 2) (Opcional) reemplazar la carga operativa anterior
     if replace_existing:
-        # -------------------------------------------------
-    # Eliminar líneas de ventas anteriores
-    # de esta empresa.
-    # -------------------------------------------------
+        # Eliminar primero las líneas de venta pertenecientes
+        # a comprobantes de la empresa.
         company_sale_ids = (
-        select(Sale.id)
-        .where(
-            Sale.company_id == cid
+            select(Sale.id)
+            .where(Sale.company_id == cid)
         )
-    )
 
-    await db.execute(
-        delete(SaleItem)
-        .where(
-            SaleItem.sale_id.in_(
-                company_sale_ids
-            )
-        )
-    )
-
-    # -------------------------------------------------
-    # Eliminar comprobantes anteriores.
-    # -------------------------------------------------
-
-    await db.execute(
-        delete(Sale)
-        .where(
-            Sale.company_id == cid
-        )
-    )
-
-    # -------------------------------------------------
-    # Los productos no se eliminan para evitar
-    # romper referencias históricas.
-    # Se desactivan y luego el catálogo actual
-    # los vuelve a activar mediante el upsert.
-    # -------------------------------------------------
-
-    existing = (
         await db.execute(
-            select(Product)
-            .where(
-                Product.company_id == cid
-            )
+            delete(SaleItem)
+            .where(SaleItem.sale_id.in_(company_sale_ids))
         )
-    ).scalars().all()
 
-    for p in existing:
-        p.active = False
+        # Luego eliminar los comprobantes de la empresa.
+        await db.execute(
+            delete(Sale)
+            .where(Sale.company_id == cid)
+        )
 
-    await db.flush()
+        # Mantener los productos para no romper referencias
+        # históricas; se desactivan y el upsert actual los reactiva.
+        existing = (
+            await db.execute(
+                select(Product)
+                .where(Product.company_id == cid)
+            )
+        ).scalars().all()
+
+        for p in existing:
+            p.active = False
+
+        await db.flush()
 
     # 3) Upsert de categorías
     cats = {}  # nombre_norm -> Category

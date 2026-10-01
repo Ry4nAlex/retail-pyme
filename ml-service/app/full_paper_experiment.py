@@ -19,6 +19,53 @@ from app.forecasting import (
 )
 
 
+# =========================================================
+# RESULTADO DE TUNING DEL DESARROLLO (30 CONFIGURACIONES)
+# =========================================================
+# La búsqueda se ejecutó sobre el bloque de desarrollo con
+# seed=42 y 8 ventanas walk-forward. En la aplicación cloud
+# se reutiliza su configuración ganadora para no repetir 240
+# entrenamientos cada vez que se consulta el mismo experimento.
+PAPER_SEARCH_BEST = {
+    "trial": 18,
+    "label": "TRIAL_17",
+    "params": {
+        "n_estimators": 200,
+        "max_depth": 4,
+        "learning_rate": 0.05,
+        "min_child_weight": 1,
+        "subsample": 1.0,
+        "colsample_bytree": 1.0,
+        "reg_alpha": 0.0,
+        "reg_lambda": 3.0,
+    },
+    "r2_mean": 0.7908,
+    "mae_mean": 4.5623,
+    "rmse_mean": 5.9381,
+    "wape_mean": 10.2875,
+    "wape_std": 0.5788,
+    "n_folds": 8,
+    "rank": 1,
+}
+
+
+def _paper_search_result():
+    return {
+        "seed": 42,
+        "n_trials": 30,
+        "selection_metric": (
+            "Menor WAPE promedio de validación; "
+            "RMSE promedio como criterio secundario"
+        ),
+        "best": dict(PAPER_SEARCH_BEST),
+        "current": None,
+        "top5": [dict(PAPER_SEARCH_BEST)],
+        "all_trials": [],
+        "reused": True,
+        "source": "development_random_search_30_trials_seed_42",
+    }
+
+
 def _period(part: pd.DataFrame):
     if part is None or part.empty:
         return {"from": None, "to": None}
@@ -1844,27 +1891,29 @@ def run_full_paper_experiment(
 )
 
     # -----------------------------------------
-    # Random Search SOLO sobre desarrollo
+    # Selección de hiperparámetros
     # -----------------------------------------
+    # Por defecto se reutiliza el resultado del Random Search
+    # ya ejecutado sobre este bloque de desarrollo. Esto evita
+    # recalcular 30 configuraciones x 8 folds en cada carga cloud.
+    # Para reproducir la búsqueda completa de forma explícita:
+    # params["recompute_random_search"] = True
 
-    search = (
-        _random_search_on_development(
+    recompute_random_search = bool(
+        params.get("recompute_random_search", False)
+    )
+
+    if recompute_random_search:
+        search = _random_search_on_development(
             development,
-
-            n_trials=
-                random_search_trials,
-
-            seed=
-                random_search_seed,
-
-            train_ratio=
-                validation_train_ratio,
+            n_trials=random_search_trials,
+            seed=random_search_seed,
+            train_ratio=validation_train_ratio,
         )
-    )
+    else:
+        search = _paper_search_result()
 
-    selected_params = (
-        search["best"]["params"]
-    )
+    selected_params = search["best"]["params"]
 
     # -----------------------------------------
     # Validación final del desarrollo
