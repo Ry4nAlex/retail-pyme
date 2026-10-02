@@ -50,6 +50,9 @@ export default function ExperimentalEvaluationPage() {
 
   const [error, setError] = useState(null)
 
+  const [operationalCloud, setOperationalCloud] =
+    useState(null)
+
   const [cloudBenchmark, setCloudBenchmark] =
     useState(null)
 
@@ -91,6 +94,8 @@ export default function ExperimentalEvaluationPage() {
 
         setFullPaper(null)
 
+        setOperationalCloud(null)
+
         setMetadata(null)
 
         setError(
@@ -125,6 +130,10 @@ export default function ExperimentalEvaluationPage() {
 
         setFullPaper(
           storedFullPaper
+        )
+
+        setOperationalCloud(
+          detail?.result?.cloud_metrics || null
         )
 
         setMetadata({
@@ -356,7 +365,118 @@ export default function ExperimentalEvaluationPage() {
 
 
       {/* ================================================= */}
-      {/* CLOUD COMPUTING */}
+      {/* MÉTRICAS OPERATIVAS CLOUD DE LA EJECUCIÓN GUARDADA */}
+      {/* ================================================= */}
+
+      {operationalCloud && (
+
+        <div className="card p-5">
+
+          <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
+
+            <div>
+
+              <h3 className="font-semibold text-slate-800 flex items-center gap-2">
+
+                <Server className="w-4 h-4 text-azure-500" />
+
+                Experimento — Métricas operativas cloud
+              </h3>
+
+              <p className="text-xs text-slate-500 mt-1">
+                Medición almacenada durante la ejecución del análisis sobre el dataset.
+              </p>
+
+            </div>
+
+            {operationalCloud.measured_at && (
+              <span className="text-xs text-slate-400">
+                {formatDate(operationalCloud.measured_at)}
+              </span>
+            )}
+
+          </div>
+
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+
+            <div className="rounded-xl border border-slate-200 p-3">
+              <p className="text-xs text-slate-400">Registros procesados</p>
+              <p className="text-lg font-bold text-slate-800">
+                {operationalCloud.records_processed?.toLocaleString?.('es-PE') ?? '-'}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 p-3">
+              <p className="text-xs text-slate-400">Tiempo total</p>
+              <p className="text-lg font-bold text-slate-800">
+                {operationalCloud.total_processing_s != null
+                  ? `${Number(operationalCloud.total_processing_s).toFixed(2)} s`
+                  : fmtMs(operationalCloud.total_processing_ms)}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 p-3">
+              <p className="text-xs text-slate-400">Throughput</p>
+              <p className="text-lg font-bold text-slate-800">
+                {operationalCloud.throughput_rps != null
+                  ? `${Number(operationalCloud.throughput_rps).toFixed(1)} registros/s`
+                  : '-'}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/30 p-3">
+              <p className="text-xs text-slate-400">Disponibilidad en la ejecución</p>
+              <p className="text-lg font-bold text-slate-800">
+                {operationalCloud.availability_pct ?? '-'} %
+              </p>
+              <p className="text-xs text-slate-400">
+                {operationalCloud.availability_checks ?? '-'} checks
+              </p>
+            </div>
+
+          </div>
+
+
+          {Array.isArray(operationalCloud.stages_ms) &&
+            operationalCloud.stages_ms.length > 0 && (
+
+            <div className="overflow-x-auto">
+
+              <table className="w-full text-sm">
+
+                <thead>
+                  <tr className="border-b text-left text-xs text-slate-500">
+                    <th className="py-2">Etapa</th>
+                    <th>Tiempo</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {operationalCloud.stages_ms.map((row, index) => (
+                    <tr
+                      key={`${row.stage}-${index}`}
+                      className="border-b border-slate-100"
+                    >
+                      <td className="py-2 font-medium text-slate-700">
+                        {row.stage || '-'}
+                      </td>
+                      <td>{fmtMs(row.ms)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+
+              </table>
+
+            </div>
+          )}
+
+        </div>
+      )}
+
+
+      {/* ================================================= */}
+      {/* CLOUD COMPUTING — BENCHMARK K6 */}
       {/* ================================================= */}
 
       {cloudBenchmark && (
