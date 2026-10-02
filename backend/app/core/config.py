@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     # ML microservice (XGBoost) — corre por separado
     ML_SERVICE_URL: str = "http://127.0.0.1:8001"
 
+    # Agente de IA - Gemini
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-3.8-flash"
+    
     class Config:
         env_file = ".env"
         case_sensitive = True
