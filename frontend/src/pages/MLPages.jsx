@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { mlService } from '../services/api'
 import IngestPage from './IngestPage'
 import {
@@ -1068,27 +1067,10 @@ export function PredictionsPage() {
   const [status, setStatus] = useState('todos')
   const [selectedProductId, setSelectedProductId] = useState('')
   const [loading, setLoading] = useState(true)
-  const [liveCloud, setLiveCloud] = useState(null)
-  const [cloudBenchmark, setCloudBenchmark] = useState(null)
-  const [refreshingCloud, setRefreshingCloud] = useState(false)
-
-  const refreshCloud = async () => {
-    setRefreshingCloud(true)
-    try {
-      const r = await mlService.cloudMetricsLive()
-      setLiveCloud(r.data)
-      toast.success('Disponibilidad actualizada')
-    } catch {
-      toast.error('No se pudo medir el servicio en vivo')
-    } finally {
-      setRefreshingCloud(false)
-    }
-  }
 
   const openAnalysis = async (id) => {
     setSelectedId(id)
     setSelectedProductId('')
-    setLiveCloud(null)
     try {
       const r = await mlService.getAnalysis(id)
       setResult(r.data.result)
@@ -1098,44 +1080,16 @@ export function PredictionsPage() {
   }
 
   useEffect(() => {
-  mlService.listAnalyses()
-    .then((r) => {
-      setAnalyses(r.data)
-
-      if (r.data[0]) {
-        openAnalysis(r.data[0].id)
-      }
-    })
-    .catch(() => {
-      toast.error('No se pudieron cargar las predicciones')
-    })
-    .finally(() => {
-      setLoading(false)
-    })
-
-  mlService.cloudBenchmark()
-    .then((r) => {
-      setCloudBenchmark(r.data)
-    })
-    .catch(() => {
-      console.error(
-        'No se pudo cargar el benchmark cloud'
-      )
-    })
-}, [])
+    mlService.listAnalyses()
+      .then((r) => {
+        setAnalyses(r.data)
+        if (r.data[0]) openAnalysis(r.data[0].id)
+      })
+      .catch(() => toast.error('No se pudieron cargar las predicciones'))
+      .finally(() => setLoading(false))
+  }, [])
 
   const summary = result?.summary
-  const metrics = result?.metrics
-  const hasFullPaper = Boolean(metrics?.full_paper)
-
-  const cloud = result?.cloud_metrics
-  // Si se verificó en vivo, actualiza la disponibilidad del análisis guardado
-  const cloudMerged = cloud ? {
-    ...cloud,
-    availability_pct: liveCloud?.availability_pct ?? cloud.availability_pct,
-    availability_checks: liveCloud?.availability_checks ?? cloud.availability_checks,
-    measured_at: liveCloud?.measured_at ?? cloud.measured_at,
-  } : null
   const products = result?.products || []
   const filtered = products.filter((p) => status === 'todos' || p.status === status)
   const selectedProduct = filtered.find((p) => p.product_id === selectedProductId) || filtered[0]
@@ -1145,7 +1099,6 @@ export function PredictionsPage() {
   const fcPts = (selectedProduct?.forecast_series || []).map((f) => ({
     label: monthLbl(f.month), real: null, pred: f.forecast,
   }))
-  // Puente: el último punto real también ancla el inicio del pronóstico (líneas conectadas)
   if (histPts.length && fcPts.length) histPts[histPts.length - 1].pred = histPts[histPts.length - 1].real
   const chartData = [...histPts, ...fcPts]
   const boundaryLabel = histPts.length ? histPts[histPts.length - 1].label : null
@@ -1184,7 +1137,7 @@ export function PredictionsPage() {
                 <label className="field-label">Estado</label>
                 <div className="grid grid-cols-4 gap-1 rounded-xl bg-slate-100 p-1">
                   {Object.entries(statusLabels).map(([key, label]) => (
-                    <button key={key} onClick={() => setStatus(key)} className={`text-xs rounded-lg px-2 py-2 font-medium transition ${status === key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
+                    <button key={key} onClick={() => { setStatus(key); setSelectedProductId('') }} className={`text-xs rounded-lg px-2 py-2 font-medium transition ${status === key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
                       {label}
                     </button>
                   ))}
@@ -1192,8 +1145,10 @@ export function PredictionsPage() {
               </div>
               <div>
                 <label className="field-label">Producto</label>
-                <select className="field-input" value={selectedProduct?.product_id || ''} onChange={(e) => setSelectedProductId(e.target.value)}>
-                  {filtered.map((p) => <option key={p.product_id} value={p.product_id}>{p.product_name}</option>)}
+                <select className="field-input" value={selectedProduct?.product_id || ''} onChange={(e) => setSelectedProductId(e.target.value)} disabled={!filtered.length}>
+                  {filtered.length > 0
+                    ? filtered.map((p) => <option key={p.product_id} value={p.product_id}>{p.product_name}</option>)
+                    : <option value="">Sin productos para este estado</option>}
                 </select>
               </div>
             </div>
@@ -1208,116 +1163,13 @@ export function PredictionsPage() {
             </div>
           )}
 
-          {hasFullPaper ? (
-
-  <div className="card p-5 border border-blue-200 bg-blue-50/30">
-
-    <div className="flex items-start justify-between gap-4 flex-wrap">
-
-      <div>
-
-        <p className="font-semibold text-slate-800">
-          Evaluación experimental disponible
-        </p>
-
-        <p className="text-sm text-slate-500 mt-1">
-          Este análisis utiliza la metodología Full Paper:
-          42 meses para desarrollo y 6 meses independientes
-          para el experimento.
-        </p>
-
-      </div>
-
-
-      <Link
-        to="/ml/evaluation"
-        className="btn-primary"
-      >
-        Ver resultados experimentales
-      </Link>
-
-    </div>
-
-  </div>
-
-) : (
-
-  <>
-
-    {(metrics || cloudMerged) && (
-
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-
-        <ModelQualityCard
-          metrics={metrics}
-        />
-
-        <ValidationChart
-          evalSeries={
-            metrics?.eval_series
-          }
-        />
-
-      </div>
-
-    )}
-
-
-    {(
-      metrics
-        ?.eval_series_by_product
-        ?.length > 0
-      ||
-      metrics
-        ?.error_by_category
-        ?.length > 0
-    ) && (
-
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-
-        <ProductPredictionChart
-          products={
-            metrics
-              ?.eval_series_by_product
-          }
-        />
-
-        <CategoryErrorCard
-          rows={
-            metrics
-              ?.error_by_category
-          }
-        />
-
-      </div>
-
-    )}
-
-
-    <BaselineComparisonCard
-      metrics={metrics}
-    />
-
-
-    <WalkForwardCard
-      walkForward={
-        metrics?.walk_forward
-      }
-    />
-
-
-    <CloudMetricsCard
-      cloud={cloudMerged}
-      benchmark={cloudBenchmark}
-      onRefresh={refreshCloud}
-      refreshing={refreshingCloud}
-    />
-
-  </>
-
-)}
-
-          {selectedProduct && (
+          {filtered.length === 0 ? (
+            <div className="card p-8 text-center">
+              <PackageSearch className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+              <p className="font-medium text-slate-700">No hay productos con este estado</p>
+              <p className="text-sm text-slate-400 mt-1">Selecciona otro filtro para consultar sus predicciones.</p>
+            </div>
+          ) : selectedProduct && (
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
               <div className="card p-5 xl:col-span-2">
                 <div className="flex items-start justify-between gap-3 mb-4">
@@ -1343,12 +1195,12 @@ export function PredictionsPage() {
                   </LineChart>
                 </ResponsiveContainer>
                 <p className="text-xs text-slate-400 mt-2">
-                  Línea azul: ventas reales por mes. Línea verde punteada (zona sombreada): demanda que el modelo proyecta para los próximos {summary?.horizon_months || 3} meses.
+                  Línea azul: demanda histórica mensual. Línea verde punteada (zona sombreada): demanda proyectada por XGBoost para los próximos {summary?.horizon_months || 3} meses.
                 </p>
               </div>
 
               <div className="card p-5">
-                <h3 className="font-semibold text-slate-800 text-sm mb-4">Lectura rapida</h3>
+                <h3 className="font-semibold text-slate-800 text-sm mb-4">Resumen del producto</h3>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="rounded-xl border border-slate-200 p-3"><p className="text-xs text-slate-400">Demanda mensual</p><p className="font-bold text-slate-800">{selectedProduct.avg_monthly_demand} u</p></div>
                   <div className="rounded-xl border border-slate-200 p-3"><p className="text-xs text-slate-400">Cobertura</p><p className="font-bold text-slate-800">{selectedProduct.days_of_coverage} d</p></div>
@@ -1360,18 +1212,20 @@ export function PredictionsPage() {
             </div>
           )}
 
-          <div className="card p-5">
-            <h3 className="font-semibold text-slate-800 text-sm mb-4">Mayor demanda proyectada</h3>
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={ranking} layout="vertical" barSize={18} margin={{ left: 12, right: 18 }}>
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
-                <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: '#64748b' }} width={150} />
-                <Tooltip contentStyle={{ borderRadius: 12, fontSize: 12 }} />
-                <Bar dataKey="demand" fill="#2563eb" radius={[0, 6, 6, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          {ranking.length > 0 && (
+            <div className="card p-5">
+              <h3 className="font-semibold text-slate-800 text-sm mb-4">Mayor demanda proyectada</h3>
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={ranking} layout="vertical" barSize={18} margin={{ left: 12, right: 18 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
+                  <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} />
+                  <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: '#64748b' }} width={150} />
+                  <Tooltip contentStyle={{ borderRadius: 12, fontSize: 12 }} />
+                  <Bar dataKey="demand" fill="#2563eb" radius={[0, 6, 6, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </>
       )}
     </div>

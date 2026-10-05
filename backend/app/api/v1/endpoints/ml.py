@@ -18,7 +18,6 @@ from app.schemas.schemas import (
 )
 from app.core.security import get_current_user, require_admin
 from app.core.config import settings
-from app.services.cloud_metrics import (probe_ml_availability,build_cloud_metrics,get_api_performance_benchmark,)
 router = APIRouter(prefix="/ml", tags=["Machine Learning"])
 
 ALLOWED_EXTENSIONS = {".csv", ".xlsx", ".xls"}
@@ -320,14 +319,11 @@ async def analyze_stock(
     al microservicio XGBoost, que pronostica la demanda y detecta qué productos
     tienen sobre-stock (cuánto exceso y cuándo). El resultado se guarda y se devuelve.
     """
-    t_start = time.perf_counter()
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(400, f"Tipo de archivo no permitido. Use: {ALLOWED_EXTENSIONS}")
 
-    t_recv = time.perf_counter()
     content = await file.read()
-    receive_ms = (time.perf_counter() - t_recv) * 1000
     max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
     if len(content) > max_bytes:
         raise HTTPException(413, f"Archivo muy grande. Máx: {settings.MAX_UPLOAD_SIZE_MB}MB")
@@ -346,21 +342,13 @@ async def analyze_stock(
             raise HTTPException(400, "current_stock debe ser un JSON válido")
 
     mime = "text/csv" if ext == ".csv" else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    t_ml = time.perf_counter()
     out = await _ml_post(
         "/analyze",
         files={"file": (file.filename, content, mime)},
         data={"params": json.dumps(params)},
     )
-    ml_roundtrip_ms = (time.perf_counter() - t_ml) * 1000
-
     summary = out.get("summary", {})
 
-    # ── Métricas operativas cloud (flujo completo del sistema) ──
-    ml_timings = out.get("timings", {}) or {}
-    records = ml_timings.get("records_in", 0)
-    availability = await probe_ml_availability(settings.ML_SERVICE_URL, n=5)
-    t_db = time.perf_counter()
     record = StockAnalysis(
         company_id=current_user["company_id"],
         created_by=current_user["user_id"],
@@ -376,23 +364,6 @@ async def analyze_stock(
         result=out,
     )
     db.add(record)
-    await db.flush()
-    db_ms = (time.perf_counter() - t_db) * 1000
-
-    backend_stages = [
-        {"stage": "Recepción de archivo", "ms": round(receive_ms, 1)},
-        {"stage": "Llamada al microservicio ML", "ms": round(ml_roundtrip_ms - (ml_timings.get("total_ml_ms") or 0), 1)},
-        {"stage": "Guardado en BD", "ms": round(db_ms, 1)},
-    ]
-    cloud = build_cloud_metrics(
-        records=records,
-        total_ms=(time.perf_counter() - t_start) * 1000,
-        backend_stages=backend_stages,
-        ml_timings=ml_timings,
-        availability=availability,
-    )
-    out["cloud_metrics"] = cloud
-    record.result = out
     await db.flush()
     await db.refresh(record)
     return record
@@ -453,35 +424,6 @@ async def ml_service_health():
         return {"reachable": resp.status_code == 200, "detail": resp.json()}
     except Exception as e:
         return {"reachable": False, "detail": str(e)}
-
-
-@router.get("/cloud-metrics/live")
-async def cloud_metrics_live():
-    """Verifica disponibilidad puntual del microservicio ML."""
-    av = await probe_ml_availability(
-        settings.ML_SERVICE_URL,
-        n=5,
-    )
-
-    return {
-        "ml_service_url": settings.ML_SERVICE_URL,
-        "availability_pct": av.get("availability_pct"),
-        "availability_checks": av.get("availability_checks"),
-        "availability_ok": av.get("availability_ok"),
-        "measured_at": (
-            __import__("datetime")
-            .datetime.utcnow()
-            .isoformat()
-            + "Z"
-        ),
-    }
-
-@router.get("/cloud-metrics/benchmark")
-async def cloud_metrics_benchmark(
-    current_user: dict = Depends(get_current_user),
-):
-    """Resultados de la prueba externa de rendimiento con k6."""
-    return get_api_performance_benchmark()
 
 
 # ─── PREDICTIONS ───

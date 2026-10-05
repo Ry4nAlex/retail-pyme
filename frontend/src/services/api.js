@@ -117,10 +117,14 @@ export const mlService = {
     api.post("/ml/analyze-stock", formData, {
       headers: { "Content-Type": "multipart/form-data" },
     }),
-  listAnalyses: () => api.get("/ml/analyses"),
+    listAnalyses: () => api.get("/ml/analyses"),
   getAnalysis: (id) => api.get(`/ml/analyses/${id}`),
   deleteAnalysis: (id) => api.delete(`/ml/analyses/${id}`),
   mlHealth: () => api.get("/ml/health-ml"),
-cloudMetricsLive: () => api.get("/ml/cloud-metrics/live"),
-cloudBenchmark: () => api.get("/ml/cloud-metrics/benchmark"),
+};
+export const agentService = {
+  chat: (data) => api.post("/agent/chat", data),
+  action: (data) => api.post("/agent/action", data),
+  evaluate: (analysisId) =>
+    api.post("/agent/evaluate", { analysis_id: analysisId }),
 };

@@ -41,3 +41,4 @@ venv_*/
 # Full Paper - archivos locales de prueba
 ml-service/sample/dataset_farmacia_48m_320_productos_temporal.csv
 ml-service/test_full_paper.py
+

@@ -31,7 +31,7 @@ function QuickLink({ icon: Icon, label, to }) {
     </button>
   )
 }
-export function FullPaperResultsCard({ fullPaper }) {
+function LegacyFullPaperResultsCard({ fullPaper }) {
   if (!fullPaper) return null
 
   const partition = fullPaper.partition || {}
@@ -1144,7 +1144,7 @@ export default function IngestPage({ embedded = false }) {
   disabled={!runMl}
   className="rounded"
 />
-  Evaluación Full Paper (42 + 6)
+  Evaluación experimental completa
 </label>
           <label className="flex items-center gap-2 mt-6 text-sm text-slate-600 cursor-pointer">
             <input type="checkbox" checked={replaceExisting} onChange={(e) => setReplaceExisting(e.target.checked)} className="rounded" />
@@ -1216,7 +1216,6 @@ export default function IngestPage({ embedded = false }) {
                   ['RMSE', result.ml.metrics.rmse],
                   ['MAPE', result.ml.metrics.mape != null ? `${result.ml.metrics.mape}%` : '-'],
                   ['WAPE', result.ml.metrics.wape != null ? `${result.ml.metrics.wape}%` : '-'],
-                  ['Precisión forecast', result.ml.metrics.forecast_accuracy_pct != null ? `${result.ml.metrics.forecast_accuracy_pct}%` : '-'],
                   ['Sesgo', result.ml.metrics.bias_pct != null ? `${result.ml.metrics.bias_pct}%` : '-'],
                 ].map(([k, v]) => (
                   <div key={k} className="rounded-xl border border-slate-200 p-3">

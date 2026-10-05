@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { mlService } from '../services/api'
+import { mlService, agentService } from '../services/api'
 import {
   Upload, FileText, Loader2, PackageSearch, AlertTriangle, TrendingUp,
   TrendingDown, Minus, DollarSign, CheckCircle2, Boxes, Activity,
@@ -115,7 +115,7 @@ function SummaryCard({ icon: Icon, label, value, sub, color }) {
   )
 }
 
-function ProductRow({ p }) {
+function ProductRow({ p, onAgentAction }) {
   const [open, setOpen] = useState(false)
   const st = STATUS[p.status] || STATUS.saludable
   const tr = TREND[p.trend] || TREND.estable
@@ -199,6 +199,41 @@ function ProductRow({ p }) {
                   <div className="rounded-xl bg-white border border-slate-200 p-3">
                     <p className="text-xs text-slate-400">Precio unit.</p>
                     <p className="font-semibold text-slate-700">{p.unit_price ? money(p.unit_price) : '-'}</p>
+                  </div>
+                </div>
+                <div className="rounded-xl bg-white border border-slate-200 p-3">
+                  <p className="text-xs font-semibold text-slate-500 mb-2">Acciones del asistente</p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="px-3 py-2 text-xs border rounded-lg hover:bg-slate-50"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onAgentAction?.('product', p)
+                      }}
+                    >
+                      Consultar
+                    </button>
+                    <button
+                      type="button"
+                      className="px-3 py-2 text-xs border rounded-lg hover:bg-slate-50"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onAgentAction?.('prediction', p)
+                      }}
+                    >
+                      Ver predicción
+                    </button>
+                    <button
+                      type="button"
+                      className="px-3 py-2 text-xs border rounded-lg hover:bg-slate-50"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onAgentAction?.('simulate_restock', p)
+                      }}
+                    >
+                      Simular reabastecimiento
+                    </button>
                   </div>
                 </div>
               </div>
@@ -706,6 +741,18 @@ export default function StockAnalysisPage() {
   const [result, setResult] = useState(null)
   const [analyses, setAnalyses] = useState([])
   const [mlOnline, setMlOnline] = useState(null)
+  const [currentAnalysisId, setCurrentAnalysisId] = useState(null)
+  const [agentOpen, setAgentOpen] = useState(false)
+  const [agentMessage, setAgentMessage] = useState('')
+  const [agentLoading, setAgentLoading] = useState(false)
+  const [simulationProduct, setSimulationProduct] = useState(null)
+  const [simulationQuantity, setSimulationQuantity] = useState('')
+  const [agentMessages, setAgentMessages] = useState([
+  {
+    role: 'assistant',
+    content: 'Hola. Puedo ayudarte a consultar el estado del inventario, predicciones de demanda y recomendaciones de reabastecimiento.'
+  }
+])
   const [filter, setFilter] = useState('todos')
 
   const loadAnalyses = () => mlService.listAnalyses().then((r) => setAnalyses(r.data)).catch(() => {})
@@ -726,6 +773,7 @@ export default function StockAnalysisPage() {
     try {
       const r = await mlService.analyzeStock(fd)
       setResult(r.data.result)
+      setCurrentAnalysisId(r.data.id)
       toast.success('Análisis completado')
       loadAnalyses()
     } catch (e) {
@@ -734,8 +782,269 @@ export default function StockAnalysisPage() {
   }
 
   const openAnalysis = async (id) => {
-    try { const r = await mlService.getAnalysis(id); setResult(r.data.result) } catch { toast.error('No se pudo abrir') }
+  try {
+    const r = await mlService.getAnalysis(id)
+
+    setResult(r.data.result)
+    setCurrentAnalysisId(r.data.id)
+  } catch {
+    toast.error('No se pudo abrir')
   }
+}
+const formatDirectActionResult = (action, data) => {
+  if (action === 'low_stock') {
+    if (!data?.length) return 'No se encontraron productos con bajo stock en este análisis.'
+
+    return [
+      `Productos con bajo stock: ${data.length}`,
+      '',
+      ...data.map((p, index) => {
+        const deficit = p.understock_units ?? '-'
+        const coverage = p.days_of_coverage ?? '-'
+        const target = p.target_stock ?? '-'
+        return `${index + 1}. ${p.product_name}\nStock actual: ${p.current_stock ?? '-'} u | Stock objetivo: ${target} u | Faltante: ${deficit} u | Cobertura: ${coverage} días`
+      })
+    ].join('\n')
+  }
+
+  if (action === 'overstock') {
+    if (!data?.length) return 'No se encontraron productos con sobrestock en este análisis.'
+
+    return [
+      `Productos con sobrestock: ${data.length}`,
+      '',
+      ...data.map((p, index) => {
+        const excess = p.overstock_units ?? '-'
+        const coverage = p.days_of_coverage ?? '-'
+        const target = p.target_stock ?? '-'
+        return `${index + 1}. ${p.product_name}\nStock actual: ${p.current_stock ?? '-'} u | Stock objetivo: ${target} u | Exceso: ${excess} u | Cobertura: ${coverage} días`
+      })
+    ].join('\n')
+  }
+
+  if (!data?.found) {
+    return data?.message || 'No se encontró información para el producto seleccionado.'
+  }
+
+  if (action === 'product') {
+    const statusLabels = {
+      bajo_stock: 'Bajo stock',
+      sobre_stock: 'Sobrestock',
+      saludable: 'Saludable',
+    }
+
+    return [
+      `Producto: ${data.product_name}`,
+      `Estado: ${statusLabels[data.status] || data.status || '-'}`,
+      `Stock actual: ${data.current_stock ?? '-'} u`,
+      `Stock objetivo: ${data.target_stock ?? '-'} u`,
+      `Demanda mensual promedio: ${data.avg_monthly_demand ?? '-'} u`,
+      `Cobertura: ${data.days_of_coverage ?? '-'} días`,
+      `Predicción (${data.horizon_months ?? '-'} meses): ${data.forecast_demand_horizon ?? '-'} u`,
+      `Tendencia: ${data.trend ?? '-'}`,
+      data.depletion_date ? `Agotamiento estimado: ${data.depletion_date}` : null,
+      data.reasoning ? `Recomendación: ${data.reasoning}` : null,
+    ].filter(Boolean).join('\n')
+  }
+
+  if (action === 'prediction') {
+    return [
+      `Predicción de demanda: ${data.product_name}`,
+      `Horizonte: ${data.horizon_months ?? '-'} meses`,
+      `Demanda pronosticada: ${data.forecast_demand_horizon ?? '-'} u`,
+      `Demanda mensual promedio: ${data.avg_monthly_demand ?? '-'} u`,
+      `Tendencia: ${data.trend ?? '-'}`,
+      '',
+      'La predicción corresponde al modelo XGBoost del sistema.',
+    ].join('\n')
+  }
+
+  if (action === 'simulate_restock') {
+    const statusLabels = {
+      bajo_stock: 'Bajo stock',
+      sobre_stock: 'Sobrestock',
+      stock_objetivo: 'Stock objetivo',
+    }
+
+    const difference = Number(data.difference_vs_target)
+    const differenceText = Number.isFinite(difference)
+      ? difference < 0
+        ? `Faltan ${Math.abs(difference)} u para alcanzar el stock objetivo`
+        : difference > 0
+          ? `Supera el stock objetivo por ${difference} u`
+          : 'Alcanza exactamente el stock objetivo'
+      : 'Diferencia frente al objetivo no disponible'
+
+    return [
+      `Simulación de reabastecimiento: ${data.product_name}`,
+      `Stock actual: ${data.current_stock ?? '-'} u`,
+      `Cantidad simulada: +${data.quantity_to_add ?? '-'} u`,
+      `Stock resultante: ${data.simulated_stock ?? '-'} u`,
+      `Stock objetivo: ${data.target_stock ?? '-'} u`,
+      `Resultado: ${differenceText}`,
+      `Estado resultante: ${statusLabels[data.simulated_status] || data.simulated_status || '-'}`,
+      '',
+      data.note || 'Esta simulación no modifica el inventario real.',
+    ].join('\n')
+  }
+
+  return 'Consulta completada.'
+}
+
+const runDirectAgentAction = async (action, userLabel, payload = {}) => {
+  if (!currentAnalysisId || agentLoading) return
+
+  setAgentMessages(prev => [
+    ...prev,
+    { role: 'user', content: userLabel }
+  ])
+  setAgentLoading(true)
+
+  try {
+    const response = await agentService.action({
+      analysis_id: currentAnalysisId,
+      action,
+      ...payload
+    })
+
+    setAgentMessages(prev => [
+      ...prev,
+      {
+        role: 'assistant',
+        content: formatDirectActionResult(action, response.data.data)
+      }
+    ])
+  } catch (error) {
+    console.error('Error al ejecutar acción de inventario:', error)
+
+    const detail =
+      error.response?.data?.detail ||
+      'No se pudo consultar la información del inventario.'
+
+    setAgentMessages(prev => [
+      ...prev,
+      { role: 'assistant', content: `Error: ${detail}` }
+    ])
+  } finally {
+    setAgentLoading(false)
+  }
+}
+
+
+const handleProductAgentAction = (action, product) => {
+  if (!product?.product_name) return
+
+  if (action === 'simulate_restock') {
+    setSimulationProduct(product)
+    setSimulationQuantity('')
+    setAgentOpen(true)
+    return
+  }
+
+  setAgentOpen(true)
+
+  if (action === 'product') {
+    runDirectAgentAction(
+      'product',
+      `Consultar ${product.product_name}`,
+      { product_name: product.product_name }
+    )
+    return
+  }
+
+  if (action === 'prediction') {
+    runDirectAgentAction(
+      'prediction',
+      `Ver predicción de ${product.product_name}`,
+      { product_name: product.product_name }
+    )
+  }
+}
+
+const submitRestockSimulation = async () => {
+  if (!simulationProduct || agentLoading) return
+
+  const quantity = Number(simulationQuantity)
+
+  if (!Number.isInteger(quantity) || quantity <= 0) {
+    toast.error('Ingresa una cantidad entera mayor que cero')
+    return
+  }
+
+  const product = simulationProduct
+  setSimulationProduct(null)
+  setSimulationQuantity('')
+
+  await runDirectAgentAction(
+    'simulate_restock',
+    `Simular +${quantity} unidades de ${product.product_name}`,
+    {
+      product_name: product.product_name,
+      quantity
+    }
+  )
+}
+
+const getAgentErrorMessage = (error) => {
+  const status = error.response?.status
+  const detail = error.response?.data?.detail
+
+  if (status === 429) {
+    return detail || 'El servicio de IA alcanzó temporalmente su límite de consultas. Las acciones directas de inventario siguen disponibles.'
+  }
+
+  if (status === 503 || status === 502) {
+    return detail || 'El servicio de IA no está disponible temporalmente. Las acciones directas de inventario siguen disponibles.'
+  }
+
+  return detail || 'No se pudo consultar al agente de inventario.'
+}
+
+const sendAgentMessage = async (customMessage = null) => {
+  const message = customMessage || agentMessage.trim()
+
+  if (!message || !currentAnalysisId || agentLoading) return
+
+  setAgentMessages(prev => [
+    ...prev,
+    {
+      role: 'user',
+      content: message
+    }
+  ])
+
+  setAgentMessage('')
+  setAgentLoading(true)
+
+  try {
+    const response = await agentService.chat({
+      message,
+      analysis_id: currentAnalysisId
+    })
+
+    setAgentMessages(prev => [
+      ...prev,
+      {
+        role: 'assistant',
+        content: response.data.response
+      }
+    ])
+  } catch (error) {
+    console.error('Error al consultar agente:', error)
+
+    const message = getAgentErrorMessage(error)
+
+    setAgentMessages(prev => [
+      ...prev,
+      {
+        role: 'assistant',
+        content: message
+      }
+    ])
+  } finally {
+    setAgentLoading(false)
+  }
+}
   const removeAnalysis = async (id, e) => {
     e.stopPropagation()
     if (!confirm('¿Eliminar este análisis?')) return
@@ -831,7 +1140,18 @@ export default function StockAnalysisPage() {
             <SummaryCard icon={CheckCircle2} label="Saludables" value={summary.healthy_count} color="#10b981" />
             <SummaryCard icon={DollarSign} label="Capital inmovilizado" value={money(summary.total_excess_value)} sub="en exceso de stock" color="#8b5cf6" />
           </div>
-
+{currentAnalysisId && (
+  <div className="flex justify-end mt-4 mb-4">
+    <button
+      type="button"
+      className="btn-primary flex items-center gap-2"
+      onClick={() => setAgentOpen(true)}
+    >
+      <Brain className="w-4 h-4" />
+      Asistente de inventario
+    </button>
+  </div>
+)}
           {hasFullPaper ? (
 
   <div className="card p-5 border border-blue-200 bg-blue-50/30">
@@ -891,11 +1211,149 @@ export default function StockAnalysisPage() {
               <tbody>
                 {products.length === 0 ? (
                   <tr><td colSpan={9} className="text-center py-12 text-slate-400 text-sm">Sin productos en esta categoría</td></tr>
-                ) : products.map((p) => <ProductRow key={p.product_id} p={p} />)}
+                ) : products.map((p) => <ProductRow key={p.product_id} p={p} onAgentAction={handleProductAgentAction} />)}
               </tbody>
             </table>
           </div>
         </>
+      )}
+
+      {/* Panel del agente de inventario */}
+      {agentOpen && currentAnalysisId && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/30 sm:p-3">
+          <div className="w-full max-w-lg h-[100dvh] sm:h-[calc(100dvh-1.5rem)] bg-white shadow-xl flex flex-col overflow-hidden sm:rounded-2xl">
+            <div className="p-4 border-b flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2">
+                <Brain className="w-5 h-5" />
+                <div>
+                  <h3 className="font-semibold">Asistente de inventario</h3>
+                  <p className="text-xs text-gray-500">Agente IA para análisis y reabastecimiento</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAgentOpen(false)}
+                className="text-gray-500 hover:text-gray-800"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-3 border-b flex flex-wrap gap-2 shrink-0">
+              <button
+                type="button"
+                className="px-3 py-2 text-xs border rounded-lg hover:bg-gray-50"
+                disabled={agentLoading}
+                onClick={() => runDirectAgentAction('low_stock', '¿Qué productos necesitan reabastecimiento?')}
+              >
+                Bajo stock
+              </button>
+              <button
+                type="button"
+                className="px-3 py-2 text-xs border rounded-lg hover:bg-gray-50"
+                disabled={agentLoading}
+                onClick={() => runDirectAgentAction('overstock', '¿Qué productos tienen sobrestock?')}
+              >
+                Sobrestock
+              </button>
+            </div>
+
+            {simulationProduct && (
+              <div className="p-3 border-b bg-slate-50 shrink-0">
+                <p className="text-xs font-semibold text-slate-700">Simular reabastecimiento</p>
+                <p className="text-xs text-slate-500 mt-1 truncate">{simulationProduct.product_name}</p>
+                <div className="flex gap-2 mt-3">
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={simulationQuantity}
+                    onChange={(e) => setSimulationQuantity(e.target.value)}
+                    placeholder="Unidades a agregar"
+                    disabled={agentLoading}
+                    className="flex-1 border rounded-lg px-3 py-2 text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={submitRestockSimulation}
+                    disabled={agentLoading || !simulationQuantity}
+                    className="btn-primary px-3"
+                  >
+                    Simular
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSimulationProduct(null)
+                      setSimulationQuantity('')
+                    }}
+                    disabled={agentLoading}
+                    className="px-3 py-2 text-xs border rounded-lg hover:bg-white"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-2">La simulación no modifica el inventario real.</p>
+              </div>
+            )}
+
+            <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
+              {agentMessages.map((msg, index) => (
+                <div
+                  key={index}
+                  className={msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'}
+                >
+                  <div
+                    className={
+                      msg.role === 'user'
+                        ? 'max-w-[85%] bg-gray-900 text-white rounded-xl px-3 py-2 text-sm'
+                        : 'max-w-[85%] bg-gray-100 text-gray-800 rounded-xl px-3 py-2 text-sm'
+                    }
+                  >
+                    <div className="whitespace-pre-wrap">{msg.content}</div>
+                  </div>
+                </div>
+              ))}
+
+              {agentLoading && (
+                <div className="flex justify-start">
+                  <div className="bg-gray-100 rounded-xl px-3 py-2 text-sm text-gray-500">
+                    Analizando inventario...
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t bg-white shrink-0">
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  sendAgentMessage()
+                }}
+                className="flex gap-2"
+              >
+                <input
+                  type="text"
+                  value={agentMessage}
+                  onChange={(e) => setAgentMessage(e.target.value)}
+                  placeholder="Pregunta sobre tu inventario..."
+                  disabled={agentLoading}
+                  className="flex-1 border rounded-lg px-3 py-2 text-sm"
+                />
+                <button
+                  type="submit"
+                  disabled={agentLoading || !agentMessage.trim()}
+                  className="btn-primary px-4"
+                >
+                  Enviar
+                </button>
+              </form>
+              <p className="text-xs text-gray-400 mt-2">
+                Las recomendaciones son de apoyo. La decisión final corresponde al usuario.
+              </p>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* History */}
