@@ -211,10 +211,10 @@ async def reset_password(request: ResetPasswordRequest, db: AsyncSession = Depen
                         user = qr_user
 
     if not user:
-        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+        raise HTTPException(status_code=400, detail="El enlace o código de recuperación no es válido o ya expiró.")
 
     if len(request.new_password) < 8:
-        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+        raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 8 caracteres.")
 
     await db.execute(
         update(User).where(User.id == user.id).values(
@@ -227,7 +227,7 @@ async def reset_password(request: ResetPasswordRequest, db: AsyncSession = Depen
     )
     await db.commit()
 
-    return MessageResponse(message="Password reset successfully. You can now log in.")
+    return MessageResponse(message="Contraseña restablecida correctamente. Ya puedes iniciar sesión.")
 
 
 @router.post("/change-password", response_model=MessageResponse)

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowLeft, Mail, CheckCircle2 } from 'lucide-react'
+import { ArrowLeft, Mail, CheckCircle2, QrCode, Upload } from 'lucide-react'
+import { Html5Qrcode } from 'html5-qrcode'
 import { authService } from '../services/api'
 
 export function ForgotPasswordPage() {
@@ -19,6 +20,29 @@ export function ForgotPasswordPage() {
     } catch (err) {
       setError(err.response?.data?.detail || 'Algo salió mal')
     } finally { setLoading(false) }
+  }
+
+  const handleQrFile = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setError('')
+    try {
+      const scanner = new Html5Qrcode('qr-file-reader')
+      const decodedText = await scanner.scanFile(file, false)
+      let token = ''
+      try {
+        const decodedUrl = new URL(decodedText)
+        token = decodedUrl.searchParams.get('token') || ''
+      } catch {
+        token = decodedText.startsWith('qr.') ? decodedText : ''
+      }
+      if (!token || !token.startsWith('qr.')) throw new Error('QR inválido')
+      window.location.href = `/reset-password?token=${encodeURIComponent(token)}`
+    } catch {
+      setError('El código QR de recuperación no es válido o no pudo leerse.')
+    } finally {
+      e.target.value = ''
+    }
   }
 
   return (
@@ -45,7 +69,7 @@ export function ForgotPasswordPage() {
               <Mail className="w-7 h-7 text-azure-500" />
             </div>
             <h2 className="text-2xl font-bold text-slate-900 mb-2" style={{ fontFamily: "'Sora', sans-serif" }}>Restablece tu contraseña</h2>
-            <p className="text-slate-500 text-sm mb-8">Ingresa tu correo y te enviaremos un enlace de restablecimiento.</p>
+            <p className="text-slate-500 text-sm mb-8">Elige una opción para recuperar el acceso a tu cuenta.</p>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="field-label">Correo electrónico</label>
@@ -61,6 +85,32 @@ export function ForgotPasswordPage() {
                 {loading ? <span className="spinner" /> : 'Enviar enlace'}
               </button>
             </form>
+
+            <div className="flex items-center gap-3 my-6">
+              <div className="h-px bg-slate-200 flex-1" />
+              <span className="text-xs font-medium text-slate-400 uppercase">o</span>
+              <div className="h-px bg-slate-200 flex-1" />
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex items-start gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-azure-50 flex items-center justify-center shrink-0">
+                  <QrCode className="w-5 h-5 text-azure-500" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-900">Recuperar con código QR</h3>
+                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                    Si tienes un código QR de recuperación asignado a tu cuenta, selecciónalo para continuar.
+                  </p>
+                </div>
+              </div>
+              <label className="btn-secondary w-full justify-center cursor-pointer">
+                <Upload className="w-4 h-4" />
+                Cargar código QR
+                <input type="file" accept="image/*" onChange={handleQrFile} className="hidden" />
+              </label>
+              <div id="qr-file-reader" className="hidden" />
+            </div>
           </>
         )}
       </div>
@@ -86,7 +136,7 @@ export function ResetPasswordPage() {
       await authService.resetPassword({ token, new_password: form.password })
       setDone(true)
     } catch (err) {
-      setError(err.response?.data?.detail || 'Enlace inválido o vencido')
+      setError(err.response?.data?.detail || 'El enlace o código de recuperación no es válido o ya expiró.')
     } finally { setLoading(false) }
   }
 
@@ -123,7 +173,7 @@ export function ResetPasswordPage() {
               <button type="submit" disabled={loading || !token} className="btn-primary w-full py-3">
                 {loading ? <span className="spinner" /> : 'Restablecer contraseña'}
               </button>
-              {!token && <p className="field-error text-center">Enlace de restablecimiento inválido. Solicita uno nuevo.</p>}
+              {!token && <p className="field-error text-center">El enlace o código de recuperación no es válido. Solicita uno nuevo.</p>}
             </form>
           </>
         )}
