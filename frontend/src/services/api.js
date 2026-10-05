@@ -20,7 +20,13 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401) {
+    const status = err.response?.status;
+    const detail = err.response?.data?.detail;
+    const unauthenticated =
+      status === 401 ||
+      (status === 403 && String(detail || "").toLowerCase().includes("not authenticated"));
+
+    if (unauthenticated) {
       localStorage.clear();
       window.location.href = "/login";
     }

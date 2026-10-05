@@ -41,16 +41,24 @@ class InventoryAgent:
     """
 
     def __init__(self):
+        # Las operaciones deterministas del agente (bajo stock, sobrestock,
+        # consulta de producto, predicción y simulación) no deben depender
+        # de Gemini. El cliente se crea de forma diferida únicamente cuando
+        # se necesita lenguaje natural o se prueba la conexión con Gemini.
+        self.client = None
+        self.model = settings.GEMINI_MODEL
+
+    def _get_client(self):
+        if self.client is not None:
+            return self.client
+
         if not settings.GEMINI_API_KEY:
             raise ValueError(
-                "No se encontró GEMINI_API_KEY en el archivo .env"
+                "No se encontró GEMINI_API_KEY en las variables de entorno."
             )
 
-        self.client = genai.Client(
-            api_key=settings.GEMINI_API_KEY
-        )
-
-        self.model = settings.GEMINI_MODEL
+        self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        return self.client
 
     def _generate_with_retry(
         self,
@@ -67,7 +75,8 @@ class InventoryAgent:
 
         for attempt in range(1, max_attempts + 1):
             try:
-                return self.client.models.generate_content(
+                client = self._get_client()
+                return client.models.generate_content(
                     model=self.model,
                     contents=contents,
                     config=config,
