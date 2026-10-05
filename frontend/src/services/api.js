@@ -42,6 +42,11 @@ export const authService = {
   forgotPassword: (email) => api.post("/auth/forgot-password", { email }),
   resetPassword: (d) => api.post("/auth/reset-password", d),
   changePassword: (d) => api.post("/auth/change-password", d),
+
+  generateRecoveryQR: (userId) =>
+  api.get(`/auth/recovery-qr/${userId}`, {
+    responseType: "blob",
+  }),
 };
 
 export const dashboardService = {

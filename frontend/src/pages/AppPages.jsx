@@ -7,6 +7,7 @@ import {
   categoriesService,
   usersService,
   companiesService,
+  authService,
 } from "../services/api";
 import {
   Plus,
@@ -1840,6 +1841,36 @@ export function UsersPage() {
     );
   }
 };
+
+  const generateRecoveryQR = async (u) => {
+    try {
+      const response = await authService.generateRecoveryQR(u.id);
+
+      const url = window.URL.createObjectURL(
+        new Blob([response.data], { type: "image/png" })
+      );
+
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `recuperacion-${u.name
+        .replace(/\s+/g, "-")
+        .toLowerCase()}.png`;
+
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      window.URL.revokeObjectURL(url);
+
+      toast.success(`QR de recuperación generado para ${u.name}`);
+    } catch (e) {
+      toast.error(
+        e.response?.data?.detail ||
+        "No se pudo generar el QR de recuperación"
+      );
+    }
+  };
+
   const F = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const companyName = (id) => companies.find((c) => c.id === id)?.name || "-";
 
@@ -1886,9 +1917,30 @@ export function UsersPage() {
                 <td className="table-td text-xs text-slate-400">{u.last_login ? new Date(u.last_login).toLocaleDateString("es-PE") : "Nunca"}</td>
                 <td className="table-td">
                   <div className="flex gap-1">
-                    <button onClick={() => openEdit(u)} className="btn-ghost p-1.5"><Edit className="w-3.5 h-3.5" /></button>
-                    <button onClick={() => del(u)} className="btn-ghost p-1.5 text-red-500 hover:bg-red-50"><Trash2 className="w-3.5 h-3.5" /></button>
-                  </div>
+  <button
+    onClick={() => generateRecoveryQR(u)}
+    className="btn-ghost px-2 py-1.5 text-blue-600 hover:bg-blue-50"
+    title="Generar QR de recuperación"
+  >
+    QR
+  </button>
+
+  <button
+    onClick={() => openEdit(u)}
+    className="btn-ghost p-1.5"
+    title="Editar usuario"
+  >
+    <Edit className="w-3.5 h-3.5" />
+  </button>
+
+  <button
+    onClick={() => del(u)}
+    className="btn-ghost p-1.5 text-red-500 hover:bg-red-50"
+    title="Eliminar usuario"
+  >
+    <Trash2 className="w-3.5 h-3.5" />
+  </button>
+</div>
                 </td>
               </tr>
             ))}
