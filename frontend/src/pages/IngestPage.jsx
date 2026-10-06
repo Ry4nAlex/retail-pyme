@@ -112,7 +112,7 @@ const inventoryComparison =
       <div className="card p-5">
         <h3 className="font-semibold text-slate-800 mb-1 flex items-center gap-2">
           <Brain className="w-4 h-4 text-azure-500" />
-          Diseño experimental del Full Paper
+          Diseño de la evaluación experimental
         </h3>
 
         <p className="text-xs text-slate-500 mb-4">

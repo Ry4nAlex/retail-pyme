@@ -40,9 +40,18 @@ class AgentChatResponse(BaseModel):
 
 class AgentActionRequest(BaseModel):
     analysis_id: UUID
-    action: str = Field(..., description="low_stock, overstock, product, prediction o simulate_restock")
+    action: str = Field(
+        ...,
+        description=(
+            "low_stock, overstock, product, prediction, summary, "
+            "restock_recommendation, prioritize_restock, "
+            "compare_products o simulate_restock"
+        ),
+    )
     product_name: Optional[str] = None
+    second_product_name: Optional[str] = None
     quantity: Optional[int] = None
+    limit: Optional[int] = 5
 
 
 class AgentActionResponse(BaseModel):
@@ -116,14 +125,69 @@ async def execute_agent_action(
         if not request.product_name:
             raise HTTPException(status_code=422, detail="Debes indicar product_name.")
         data = agent.get_prediction(context, request.product_name)
+    elif request.action == "summary":
+        data = agent.get_inventory_summary(context)
+    elif request.action == "restock_recommendation":
+        if not request.product_name:
+            raise HTTPException(
+                status_code=422,
+                detail="Debes indicar product_name.",
+            )
+
+        data = agent.get_restock_recommendation(
+            context,
+            request.product_name,
+        )
+
+    elif request.action == "prioritize_restock":
+        data = agent.prioritize_restock_products(
+            context,
+            request.limit or 5,
+        )
+
+    elif request.action == "compare_products":
+        if not request.product_name:
+            raise HTTPException(
+                status_code=422,
+                detail="Debes indicar product_name.",
+            )
+
+        if not request.second_product_name:
+            raise HTTPException(
+                status_code=422,
+                detail="Debes indicar second_product_name.",
+            )
+
+        data = agent.compare_products(
+            context,
+            request.product_name,
+            request.second_product_name,
+        )
+
     elif request.action == "simulate_restock":
         if not request.product_name:
-            raise HTTPException(status_code=422, detail="Debes indicar product_name.")
+            raise HTTPException(
+                status_code=422,
+                detail="Debes indicar product_name.",
+            )
+
         if request.quantity is None:
-            raise HTTPException(status_code=422, detail="Debes indicar quantity.")
-        data = agent.simulate_restock(context, request.product_name, request.quantity)
+            raise HTTPException(
+                status_code=422,
+                detail="Debes indicar quantity.",
+            )
+
+        data = agent.simulate_restock(
+            context,
+            request.product_name,
+            request.quantity,
+        )
+
     else:
-        raise HTTPException(status_code=422, detail="Acción no válida.")
+        raise HTTPException(
+            status_code=422,
+            detail="Acción no válida.",
+        )
 
     return AgentActionResponse(success=True, action=request.action, data=data)
 
@@ -217,7 +281,165 @@ async def evaluate_agent(
         add_case("product", "Consulta exacta de producto", False, "No hay productos evaluables.")
         add_case("prediction", "Consulta de predicción almacenada", False, "No hay productos evaluables.")
         add_case("simulation", "Simulación de reabastecimiento sin mutación", False, "No hay productos evaluables.")
+    # ---------------------------------------------------------
+    # Evaluación del resumen general de inventario
+    # ---------------------------------------------------------
 
+    summary_result = agent.get_inventory_summary(context)
+
+    expected_low = len(
+        [
+            product
+            for product in products
+            if product.get("status") == "bajo_stock"
+        ]
+    )
+
+    expected_over = len(
+        [
+            product
+            for product in products
+            if product.get("status") == "sobre_stock"
+        ]
+    )
+
+    add_case(
+        "inventory_summary",
+        "Consistencia del resumen general de inventario",
+        summary_result.get("total_products") == len(products)
+        and summary_result.get("low_stock_count") == expected_low
+        and summary_result.get("overstock_count") == expected_over,
+        (
+            f"Total: {len(products)}; "
+            f"bajo stock: {expected_low}; "
+            f"sobrestock: {expected_over}."
+        ),
+    )
+    # ---------------------------------------------------------
+    # Evaluación de recomendación de reabastecimiento
+    # ---------------------------------------------------------
+
+    if sample and sample.get("product_name"):
+        name = sample["product_name"]
+
+        recommendation = agent.get_restock_recommendation(
+            context,
+            name,
+        )
+
+        expected_units = max(
+            0,
+            int(
+                round(
+                    float(sample.get("target_stock") or 0)
+                    - float(sample.get("current_stock") or 0)
+                )
+            ),
+        )
+
+        add_case(
+            "restock_recommendation",
+            "Consistencia de recomendación de reabastecimiento",
+            recommendation.get("found") is True
+            and recommendation.get("recommended_units") == expected_units,
+            (
+                f"Producto: {name}; "
+                f"cantidad esperada: {expected_units}; "
+                f"cantidad obtenida: "
+                f"{recommendation.get('recommended_units')}."
+            ),
+        )
+
+    else:
+        add_case(
+            "restock_recommendation",
+            "Consistencia de recomendación de reabastecimiento",
+            False,
+            "No hay productos evaluables.",
+        )
+
+    # ---------------------------------------------------------
+    # Evaluación de priorización
+    # ---------------------------------------------------------
+
+    prioritized = agent.prioritize_restock_products(
+        context,
+        limit=5,
+    )
+
+    low_stock_count = len(
+        [
+            product
+            for product in products
+            if product.get("status") == "bajo_stock"
+        ]
+    )
+
+    expected_priority_count = min(5, low_stock_count)
+
+    priorities_are_sequential = all(
+        item.get("priority") == index
+        for index, item in enumerate(prioritized, start=1)
+    )
+
+    add_case(
+        "prioritization",
+        "Priorización determinista de reabastecimiento",
+        len(prioritized) == expected_priority_count
+        and priorities_are_sequential,
+        (
+            f"Productos con bajo stock: {low_stock_count}; "
+            f"priorizados: {len(prioritized)}."
+        ),
+    )
+
+    # ---------------------------------------------------------
+    # Evaluación de comparación entre productos
+    # ---------------------------------------------------------
+
+    if len(products) >= 2:
+        first_name = products[0].get("product_name")
+        second_name = products[1].get("product_name")
+
+        if first_name and second_name:
+            comparison = agent.compare_products(
+                context,
+                first_name,
+                second_name,
+            )
+
+            add_case(
+                "comparison",
+                "Comparación controlada entre productos",
+                comparison.get("found") is True
+                and comparison.get("product_a", {}).get(
+                    "product_name"
+                ) == first_name
+                and comparison.get("product_b", {}).get(
+                    "product_name"
+                ) == second_name,
+                (
+                    f"Productos comparados: "
+                    f"{first_name} y {second_name}."
+                ),
+            )
+        else:
+            add_case(
+                "comparison",
+                "Comparación controlada entre productos",
+                False,
+                "Los productos evaluados no tienen nombre.",
+            )
+    else:
+        cases.append({
+            "id": "comparison",
+            "name": "Comparación controlada entre productos",
+            "passed": None,
+            "detail": (
+                "Se requieren al menos dos productos "
+                "para ejecutar esta prueba."
+            ),
+        })
     missing = agent.get_product_info(context, "__producto_inexistente_evaluacion__")
     add_case(
         "not_found",
@@ -294,7 +516,153 @@ async def evaluate_agent(
             "Gemini se realiza por separado."
         ),
     }
+@router.post("/evaluate-language")
+async def evaluate_agent_language(
+    request: AgentEvaluationRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Evalúa la capacidad de Gemini para interpretar consultas en lenguaje
+    natural y seleccionar la herramienta controlada esperada.
 
+    Esta evaluación consume Gemini, se ejecuta únicamente bajo demanda
+    y no modifica el inventario.
+    """
+    context = await _get_analysis_context(
+        request.analysis_id,
+        db,
+        current_user["company_id"],
+    )
+
+    agent = get_inventory_agent()
+    products = context.get("products", []) or []
+
+    cases = [
+        {
+            "id": "low_stock_intent",
+            "name": "Interpretación de consulta de bajo stock",
+            "prompt": "¿Qué productos necesitan reabastecimiento por bajo stock?",
+            "expected_tool": "listar_productos_bajo_stock",
+        },
+        {
+            "id": "overstock_intent",
+            "name": "Interpretación de consulta de sobrestock",
+            "prompt": "¿Qué productos presentan sobrestock?",
+            "expected_tool": "listar_productos_sobrestock",
+        },
+        {
+            "id": "summary_intent",
+            "name": "Interpretación de resumen de inventario",
+            "prompt": "Dame un resumen general del estado del inventario.",
+            "expected_tool": "resumir_inventario",
+        },
+        {
+            "id": "prioritization_intent",
+            "name": "Interpretación de priorización de reabastecimiento",
+            "prompt": "Prioriza los 5 productos que requieren reabastecimiento.",
+            "expected_tool": "priorizar_reabastecimiento",
+        },
+    ]
+
+    # Se incorpora una consulta dependiente de un producto real del análisis.
+    sample = next(
+        (
+            product
+            for product in products
+            if product.get("product_name")
+        ),
+        None,
+    )
+
+    if sample:
+        product_name = sample["product_name"]
+
+        cases.append({
+            "id": "recommendation_intent",
+            "name": "Interpretación de recomendación de reabastecimiento",
+            "prompt": (
+                f"¿Cuál es la recomendación de reabastecimiento "
+                f"para {product_name}?"
+            ),
+            "expected_tool": "recomendar_reabastecimiento",
+        })
+
+    results = []
+
+    for case in cases:
+        try:
+            result = agent.chat(
+                message=case["prompt"],
+                analysis_context=context,
+                return_trace=True,
+            )
+
+            selected_tools = result.get("tool_trace", [])
+            expected_tool = case["expected_tool"]
+
+            passed = expected_tool in selected_tools
+
+            results.append({
+                "id": case["id"],
+                "name": case["name"],
+                "prompt": case["prompt"],
+                "expected_tool": expected_tool,
+                "selected_tools": selected_tools,
+                "passed": passed,
+                "response": result.get("response"),
+                "detail": (
+                    f"Herramienta esperada: {expected_tool}; "
+                    f"seleccionadas: "
+                    f"{', '.join(selected_tools) if selected_tools else 'ninguna'}."
+                ),
+            })
+
+        except RuntimeError as exc:
+            results.append({
+                "id": case["id"],
+                "name": case["name"],
+                "prompt": case["prompt"],
+                "expected_tool": case["expected_tool"],
+                "selected_tools": [],
+                "passed": False,
+                "response": None,
+                "detail": f"No se pudo completar la consulta: {str(exc)}",
+            })
+
+    passed = sum(
+        1
+        for case in results
+        if case["passed"]
+    )
+
+    failed = len(results) - passed
+
+    compliance_pct = (
+        round((passed / len(results)) * 100, 2)
+        if results
+        else None
+    )
+
+    return {
+        "analysis_id": str(request.analysis_id),
+        "evaluation_type": "natural_language_tool_selection",
+        "uses_gemini": True,
+        "modifies_inventory": False,
+        "summary": {
+            "total_cases": len(results),
+            "passed": passed,
+            "failed": failed,
+            "compliance_pct": compliance_pct,
+        },
+        "cases": results,
+        "note": (
+            "Esta evaluación mide si Gemini interpreta consultas "
+            "predefinidas en lenguaje natural y selecciona la herramienta "
+            "controlada esperada. No evalúa el desempeño predictivo de "
+            "XGBoost y no modifica el inventario."
+        ),
+    }
 
 @router.post("/chat", response_model=AgentChatResponse)
 async def chat_with_agent(

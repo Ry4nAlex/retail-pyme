@@ -142,6 +142,10 @@ export const mlService = {
 export const agentService = {
   chat: (data) => api.post("/agent/chat", data),
   action: (data) => api.post("/agent/action", data),
+
   evaluate: (analysisId) =>
     api.post("/agent/evaluate", { analysis_id: analysisId }),
+
+  evaluateLanguage: (analysisId) =>
+    api.post("/agent/evaluate-language", { analysis_id: analysisId }),
 };

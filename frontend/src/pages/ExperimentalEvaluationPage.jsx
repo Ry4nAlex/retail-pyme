@@ -972,6 +972,101 @@ function AgentEvaluationCard({ result, loading, error, onRun }) {
   )
 }
 
+
+function AgentLanguageEvaluationCard({ result, loading, error, onRun }) {
+  const summary = result?.summary || {}
+  const cases = result?.cases || []
+
+  const statusBadge = (value) => (
+    value
+      ? <span className="inline-flex rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">Cumple</span>
+      : <span className="inline-flex rounded-full bg-red-50 px-2 py-1 text-xs font-semibold text-red-700">No cumple</span>
+  )
+
+  return (
+    <div className="card p-5">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h3 className="font-semibold text-slate-800 mb-1 flex items-center gap-2">
+            <Brain className="w-4 h-4 text-azure-500" />
+            Evaluación de interpretación con IA
+          </h3>
+          <p className="text-xs text-slate-500">
+            Evalúa bajo demanda si Gemini interpreta consultas predefinidas en lenguaje natural
+            y selecciona la herramienta controlada esperada. Esta prueba consume Gemini y no modifica el inventario.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onRun}
+          disabled={loading}
+          className="btn-secondary flex items-center gap-2"
+        >
+          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Brain className="w-4 h-4" />}
+          {result ? 'Reevaluar interpretación' : 'Evaluar interpretación con IA'}
+        </button>
+      </div>
+
+      {error && (
+        <div className="mt-4 rounded-xl border border-red-200 bg-red-50/40 p-4 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      {!result && !error && (
+        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/30 p-4 text-sm text-slate-600">
+          La evaluación no se ejecuta automáticamente para evitar consumo innecesario de la cuota de Gemini.
+        </div>
+      )}
+
+      {result && (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+            {[
+              ['Cumplimiento de selección', summary.compliance_pct != null ? `${summary.compliance_pct} %` : '-'],
+              ['Casos evaluados', summary.total_cases ?? '-'],
+              ['Cumplen', summary.passed ?? '-'],
+              ['No cumplen', summary.failed ?? '-'],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-xl border border-slate-200 p-3">
+                <p className="text-xs text-slate-400">{label}</p>
+                <p className="text-lg font-bold text-slate-800">{value}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="overflow-x-auto mt-4">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-xs text-slate-500">
+                  <th className="py-2 pr-3">Caso</th>
+                  <th className="pr-3">Herramienta esperada</th>
+                  <th className="pr-3">Herramienta seleccionada</th>
+                  <th className="pr-3">Resultado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {cases.map((item) => (
+                  <tr key={item.id} className="border-b border-slate-100 align-top">
+                    <td className="py-3 pr-3 font-medium text-slate-700">{item.name}</td>
+                    <td className="py-3 pr-3 text-slate-500">{item.expected_tool || '-'}</td>
+                    <td className="py-3 pr-3 text-slate-500">
+                      {item.selected_tools?.length ? item.selected_tools.join(', ') : 'Ninguna'}
+                    </td>
+                    <td className="py-3 pr-3">{statusBadge(item.passed)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <p className="mt-4 text-xs text-slate-400">{result.note}</p>
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function ExperimentalEvaluationPage() {
   const [loading, setLoading] = useState(true)
   const [evaluation, setEvaluation] = useState(null)
@@ -980,12 +1075,17 @@ export default function ExperimentalEvaluationPage() {
   const [agentEvaluation, setAgentEvaluation] = useState(null)
   const [agentEvaluationLoading, setAgentEvaluationLoading] = useState(false)
   const [agentEvaluationError, setAgentEvaluationError] = useState(null)
+  const [agentLanguageEvaluation, setAgentLanguageEvaluation] = useState(null)
+  const [agentLanguageEvaluationLoading, setAgentLanguageEvaluationLoading] = useState(false)
+  const [agentLanguageEvaluationError, setAgentLanguageEvaluationError] = useState(null)
 
   const loadLatestExperiment = useCallback(async () => {
     setLoading(true)
     setError(null)
     setAgentEvaluation(null)
     setAgentEvaluationError(null)
+    setAgentLanguageEvaluation(null)
+    setAgentLanguageEvaluationError(null)
 
     try {
       const listResponse = await mlService.listAnalyses()
@@ -1054,6 +1154,27 @@ export default function ExperimentalEvaluationPage() {
       )
     } finally {
       setAgentEvaluationLoading(false)
+    }
+  }, [metadata?.id])
+
+  const runAgentLanguageEvaluation = useCallback(async () => {
+    if (!metadata?.id) return
+
+    setAgentLanguageEvaluationLoading(true)
+    setAgentLanguageEvaluationError(null)
+
+    try {
+      const response = await agentService.evaluateLanguage(metadata.id)
+      setAgentLanguageEvaluation(response.data)
+    } catch (err) {
+      console.error(err)
+      setAgentLanguageEvaluationError(
+        err?.response?.data?.detail ||
+        err?.message ||
+        'No se pudo evaluar la interpretación con IA.'
+      )
+    } finally {
+      setAgentLanguageEvaluationLoading(false)
     }
   }, [metadata?.id])
 
@@ -1140,6 +1261,15 @@ export default function ExperimentalEvaluationPage() {
           loading={agentEvaluationLoading}
           error={agentEvaluationError}
           onRun={runAgentEvaluation}
+        />
+      )}
+
+      {evaluation && metadata?.id && (
+        <AgentLanguageEvaluationCard
+          result={agentLanguageEvaluation}
+          loading={agentLanguageEvaluationLoading}
+          error={agentLanguageEvaluationError}
+          onRun={runAgentLanguageEvaluation}
         />
       )}
     </div>

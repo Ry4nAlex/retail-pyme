@@ -1161,7 +1161,7 @@ const sendAgentMessage = async (customMessage = null) => {
       <div>
 
         <p className="font-semibold text-slate-800">
-          Evaluación Full Paper disponible
+          Evaluación experimental disponible
         </p>
 
         <p className="text-sm text-slate-500 mt-1">
