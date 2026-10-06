@@ -6,7 +6,7 @@ import {
   Brain, LogOut, Menu, X, TrendingUp, Database, UserCog,
   Building2, ShieldCheck, PackageSearch,
 } from 'lucide-react'
-
+import { authService } from '../../services/api'
 const NAV = {
   superadmin: [
     { to: '/dashboard', icon: LayoutDashboard, label: 'Panel' },
@@ -71,7 +71,35 @@ function Sidebar({ onClose }) {
   const items = NAV[user?.role] || NAV.client
 
   const handleLogout = () => { logout(); navigate('/login') }
+const handleRecoveryCode = async () => {
+  try {
+    const response = await authService.generateMyRecoveryCode()
+    const code = response.data?.recovery_code
 
+    if (!code) {
+      window.alert('No se pudo generar el código de recuperación.')
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(code)
+    } catch {
+      // El código igualmente se muestra aunque el navegador no permita copiarlo.
+    }
+
+    window.alert(
+      `Tu código de recuperación es:\n\n${code}\n\n` +
+      `Guárdalo en un lugar seguro. Lo necesitarás si deseas recuperar ` +
+      `tu contraseña mediante QR.\n\n` +
+      `Si generas otro código, este dejará de funcionar.`
+    )
+  } catch (error) {
+    window.alert(
+      error.response?.data?.detail ||
+      'No se pudo generar el código de recuperación.'
+    )
+  }
+}
   return (
     <div className="flex flex-col h-full"
       style={{ background: 'linear-gradient(180deg, #0d1829 0%, #080f1a 100%)' }}>
@@ -108,6 +136,12 @@ function Sidebar({ onClose }) {
             <p className="text-slate-500 text-xs">{ROLE_LABELS[user?.role] || user?.role}</p>
           </div>
         </div>
+        <button
+  onClick={handleRecoveryCode}
+  className="flex items-center gap-2.5 w-full px-3 py-2 text-slate-400 hover:text-blue-400 text-sm rounded-xl transition-colors"
+>
+  Código de recuperación
+</button>
         <button
           onClick={handleLogout}
           className="flex items-center gap-2.5 w-full px-3 py-2 text-slate-500 hover:text-red-400 text-sm rounded-xl transition-colors"

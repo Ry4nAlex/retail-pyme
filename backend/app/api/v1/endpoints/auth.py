@@ -186,6 +186,37 @@ async def generate_recovery_qr(
         "message": "Código de recuperación generado. Entréguelo al usuario y guárdelo en un lugar seguro.",
     }
 
+@router.post("/my-recovery-code")
+async def generate_my_recovery_code(
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(User).where(User.id == current_user["user_id"])
+    )
+    user = result.scalar_one_or_none()
+
+    if not user or not user.active:
+        raise HTTPException(
+            status_code=404,
+            detail="Usuario no encontrado."
+        )
+
+    recovery_code = _generate_recovery_code()
+
+    user.recovery_code_hash = _hash_recovery_value(recovery_code)
+
+    # Al regenerar el código, invalidamos cualquier QR anterior.
+    user.qr_recovery_token_hash = None
+    user.qr_recovery_created_at = None
+
+    await db.commit()
+
+    return {
+        "recovery_code": recovery_code,
+        "message": "Código de recuperación generado correctamente."
+    }
+
 
 @router.post("/recovery-qr")
 async def generate_self_service_recovery_qr(
