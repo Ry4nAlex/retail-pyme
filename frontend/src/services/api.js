@@ -43,10 +43,17 @@ export const authService = {
   resetPassword: (d) => api.post("/auth/reset-password", d),
   changePassword: (d) => api.post("/auth/change-password", d),
 
+  // Admin/Superadmin: genera o regenera el código personal
+  // de recuperación del usuario.
   generateRecoveryQR: (userId) =>
-  api.get(`/auth/recovery-qr/${userId}`, {
-    responseType: "blob",
-  }),
+    api.get(`/auth/recovery-qr/${userId}`),
+
+  // Recuperación pública: valida correo + código personal
+  // y devuelve un QR temporal de un solo uso.
+  generateSelfServiceRecoveryQR: (data) =>
+    api.post("/auth/recovery-qr", data, {
+      responseType: "blob",
+    }),
 };
 
 export const dashboardService = {

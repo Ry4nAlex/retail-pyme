@@ -14,7 +14,7 @@ from app.models.models import Company, User
 from app.schemas.schemas import (
     LoginRequest, TokenResponse, ForgotPasswordRequest,
     ResetPasswordRequest, ChangePasswordRequest, MessageResponse,
-    BootstrapSuperAdminRequest
+    BootstrapSuperAdminRequest, QRRecoveryRequest
 )
 from app.core.security import (
     verify_password, hash_password, create_access_token,
@@ -24,6 +24,26 @@ from app.services.email import send_password_reset_email
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
+def _hash_recovery_value(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _generate_recovery_code() -> str:
+    # 12 caracteres aleatorios, mostrados en grupos para que sea fácil guardarlo.
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    raw = "".join(secrets.choice(alphabet) for _ in range(12))
+    return f"RP-{raw[:4]}-{raw[4:8]}-{raw[8:]}"
+
+
+def _build_qr_png(recovery_url: str) -> bytes:
+    qr = qrcode.QRCode(version=1, box_size=10, border=4)
+    qr.add_data(recovery_url)
+    qr.make(fit=True)
+    image = qr.make_image(fill_color="black", back_color="white")
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
 
 @router.post("/bootstrap-superadmin", response_model=MessageResponse, status_code=201)
 async def bootstrap_superadmin(request: BootstrapSuperAdminRequest, db: AsyncSession = Depends(get_db)):
@@ -31,7 +51,7 @@ async def bootstrap_superadmin(request: BootstrapSuperAdminRequest, db: AsyncSes
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="A super administrator already exists")
     if len(request.password) < 8:
-        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+        raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 8 caracteres.")
 
     company = Company(
         name=request.company_name,
@@ -120,7 +140,7 @@ async def forgot_password(request: ForgotPasswordRequest, db: AsyncSession = Dep
         except Exception as e:
             print(f"[EMAIL ERROR] {e}")
 
-    return MessageResponse(message="If an account exists with that email, a reset link has been sent.")
+    return MessageResponse(message="Si existe una cuenta asociada a ese correo, se ha enviado un enlace de recuperación.")
 
 @router.get("/recovery-qr/{user_id}")
 async def generate_recovery_qr(
@@ -128,25 +148,70 @@ async def generate_recovery_qr(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    Genera/regenera el código personal de recuperación de un usuario.
+    Solo admin/superadmin. El código se muestra una vez; en BD se guarda solo su hash.
+    """
     if current_user.get("role") not in ("admin", "superadmin"):
         raise HTTPException(status_code=403, detail="No tiene permisos para generar códigos de recuperación.")
 
     try:
         target_user_id = UUID(user_id)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Identificador de usuario inválido")
+        raise HTTPException(status_code=400, detail="Identificador de usuario inválido.")
 
     result = await db.execute(select(User).where(User.id == target_user_id))
     user = result.scalar_one_or_none()
 
     if not user or not user.active:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        raise HTTPException(status_code=404, detail="Usuario no encontrado.")
 
     if current_user.get("role") == "admin" and str(user.company_id) != str(current_user.get("company_id")):
-        raise HTTPException(status_code=403, detail="No tiene permisos para generar el QR de este usuario.")
+        raise HTTPException(status_code=403, detail="No tiene permisos para gestionar la recuperación de este usuario.")
+
+    recovery_code = _generate_recovery_code()
+    recovery_code_hash = _hash_recovery_value(recovery_code)
+
+    await db.execute(
+        update(User).where(User.id == user.id).values(
+            recovery_code_hash=recovery_code_hash,
+            qr_recovery_token_hash=None,
+            qr_recovery_created_at=None,
+        )
+    )
+    await db.commit()
+
+    return {
+        "recovery_code": recovery_code,
+        "message": "Código de recuperación generado. Entréguelo al usuario y guárdelo en un lugar seguro.",
+    }
+
+
+@router.post("/recovery-qr")
+async def generate_self_service_recovery_qr(
+    request: QRRecoveryRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Recuperación autoservicio: valida correo + código personal y emite un QR temporal.
+    El QR anterior queda invalidado al generar uno nuevo.
+    """
+    result = await db.execute(
+        select(User).where(User.email == request.email, User.active == True)
+    )
+    user = result.scalar_one_or_none()
+
+    invalid_detail = "Los datos de recuperación no son válidos."
+
+    if not user or not user.recovery_code_hash:
+        raise HTTPException(status_code=400, detail=invalid_detail)
+
+    candidate_code_hash = _hash_recovery_value(request.recovery_code.strip().upper())
+    if not hmac.compare_digest(candidate_code_hash, user.recovery_code_hash):
+        raise HTTPException(status_code=400, detail=invalid_detail)
 
     secret = secrets.token_urlsafe(32)
-    secret_hash = hashlib.sha256(secret.encode("utf-8")).hexdigest()
+    secret_hash = _hash_recovery_value(secret)
     qr_token = f"qr.{user.id}.{secret}"
 
     await db.execute(
@@ -159,19 +224,12 @@ async def generate_recovery_qr(
 
     frontend_url = "https://retail-pyme.vercel.app"
     recovery_url = f"{frontend_url}/reset-password?token={qr_token}"
-
-    qr = qrcode.QRCode(version=1, box_size=10, border=4)
-    qr.add_data(recovery_url)
-    qr.make(fit=True)
-    image = qr.make_image(fill_color="black", back_color="white")
-
-    buffer = io.BytesIO()
-    image.save(buffer, format="PNG")
+    png = _build_qr_png(recovery_url)
 
     return Response(
-        content=buffer.getvalue(),
+        content=png,
         media_type="image/png",
-        headers={"Content-Disposition": 'attachment; filename="retailpyme-recovery-qr.png"'},
+        headers={"Cache-Control": "no-store"},
     )
 
 
@@ -205,9 +263,13 @@ async def reset_password(request: ResetPasswordRequest, db: AsyncSession = Depen
                 )
                 qr_user = qr_result.scalar_one_or_none()
 
-                if qr_user and qr_user.qr_recovery_token_hash:
-                    candidate_hash = hashlib.sha256(secret.encode("utf-8")).hexdigest()
-                    if hmac.compare_digest(candidate_hash, qr_user.qr_recovery_token_hash):
+                if qr_user and qr_user.qr_recovery_token_hash and qr_user.qr_recovery_created_at:
+                    qr_expires = qr_user.qr_recovery_created_at + timedelta(minutes=10)
+                    candidate_hash = _hash_recovery_value(secret)
+                    if (
+                        qr_expires > datetime.utcnow()
+                        and hmac.compare_digest(candidate_hash, qr_user.qr_recovery_token_hash)
+                    ):
                         user = qr_user
 
     if not user:
@@ -240,10 +302,10 @@ async def change_password(
     user = result.scalar_one_or_none()
 
     if not user or not verify_password(request.current_password, user.password_hash):
-        raise HTTPException(status_code=400, detail="Current password is incorrect")
+        raise HTTPException(status_code=400, detail="La contraseña actual es incorrecta.")
 
     if len(request.new_password) < 8:
-        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+        raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 8 caracteres.")
 
     await db.execute(
         update(User).where(User.id == user.id).values(
@@ -256,7 +318,7 @@ async def change_password(
     )
     await db.commit()
 
-    return MessageResponse(message="Password changed successfully")
+    return MessageResponse(message="Contraseña cambiada correctamente.")
 
 
 @router.get("/me")

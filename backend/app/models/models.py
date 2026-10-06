@@ -43,6 +43,7 @@ class User(Base):
     password_reset_expires    = Column(DateTime)
     qr_recovery_token_hash    = Column(String(64))
     qr_recovery_created_at    = Column(DateTime)
+    recovery_code_hash        = Column(String(64))
     last_login                = Column(DateTime)
     created_at             = Column(DateTime, default=datetime.utcnow)
     updated_at             = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

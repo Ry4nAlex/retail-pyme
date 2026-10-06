@@ -22,6 +22,10 @@ class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str
 
+class QRRecoveryRequest(BaseModel):
+    email: str
+    recovery_code: str
+
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str

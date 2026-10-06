@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowLeft, Mail, CheckCircle2, QrCode, Upload } from 'lucide-react'
-import { Html5Qrcode } from 'html5-qrcode'
+import { ArrowLeft, Mail, CheckCircle2, QrCode } from 'lucide-react'
 import { authService } from '../services/api'
 
 export function ForgotPasswordPage() {
@@ -10,44 +9,54 @@ export function ForgotPasswordPage() {
   const [sent, setSent] = useState(false)
   const [error, setError] = useState('')
 
+  const [qrEmail, setQrEmail] = useState('')
+  const [recoveryCode, setRecoveryCode] = useState('')
+  const [qrLoading, setQrLoading] = useState(false)
+  const [qrError, setQrError] = useState('')
+  const [qrUrl, setQrUrl] = useState('')
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!email) { setError('El correo es obligatorio'); return }
     setLoading(true)
+    setError('')
     try {
       await authService.forgotPassword(email)
       setSent(true)
     } catch (err) {
-      setError(err.response?.data?.detail || 'Algo salió mal')
+      setError(err.response?.data?.detail || 'No se pudo procesar la solicitud.')
     } finally { setLoading(false) }
   }
 
-  const handleQrFile = async (e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setError('')
+  const handleGenerateQr = async (e) => {
+    e.preventDefault()
+    if (!qrEmail || !recoveryCode) {
+      setQrError('Ingresa tu correo y código de recuperación.')
+      return
+    }
+
+    setQrLoading(true)
+    setQrError('')
+    if (qrUrl) URL.revokeObjectURL(qrUrl)
+    setQrUrl('')
+
     try {
-      const scanner = new Html5Qrcode('qr-file-reader')
-      const decodedText = await scanner.scanFile(file, false)
-      let token = ''
-      try {
-        const decodedUrl = new URL(decodedText)
-        token = decodedUrl.searchParams.get('token') || ''
-      } catch {
-        token = decodedText.startsWith('qr.') ? decodedText : ''
-      }
-      if (!token || !token.startsWith('qr.')) throw new Error('QR inválido')
-      window.location.href = `/reset-password?token=${encodeURIComponent(token)}`
-    } catch {
-      setError('El código QR de recuperación no es válido o no pudo leerse.')
+      const response = await authService.generateSelfServiceRecoveryQR({
+        email: qrEmail,
+        recovery_code: recoveryCode.trim().toUpperCase(),
+      })
+      setQrUrl(URL.createObjectURL(response.data))
+    } catch (err) {
+      const detail = err.response?.data?.detail
+      setQrError(typeof detail === 'string' ? detail : 'No se pudo generar el código QR.')
     } finally {
-      e.target.value = ''
+      setQrLoading(false)
     }
   }
 
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-      <div className="w-full max-w-[400px]">
+      <div className="w-full max-w-[430px]">
         <Link to="/login" className="inline-flex items-center gap-2 text-sm text-slate-500 hover:text-slate-800 mb-8 transition-colors">
           <ArrowLeft className="w-4 h-4" /> Volver al inicio de sesión
         </Link>
@@ -59,8 +68,11 @@ export function ForgotPasswordPage() {
             </div>
             <h2 className="text-2xl font-bold text-slate-900 mb-3" style={{ fontFamily: "'Sora', sans-serif" }}>Revisa tu bandeja de entrada</h2>
             <p className="text-slate-500 text-sm leading-relaxed mb-6">
-              Si existe una cuenta para <strong>{email}</strong>, enviamos un enlace para restablecer la contraseña. Revisa tu carpeta de spam si no lo ves.
+              Si existe una cuenta asociada a <strong>{email}</strong>, recibirás un enlace para restablecer tu contraseña. Revisa también la carpeta de spam.
             </p>
+            <button type="button" onClick={() => setSent(false)} className="btn-secondary w-full justify-center mb-3">
+              Usar otro método
+            </button>
             <Link to="/login" className="btn-primary w-full justify-center">Volver a iniciar sesión</Link>
           </div>
         ) : (
@@ -69,47 +81,84 @@ export function ForgotPasswordPage() {
               <Mail className="w-7 h-7 text-azure-500" />
             </div>
             <h2 className="text-2xl font-bold text-slate-900 mb-2" style={{ fontFamily: "'Sora', sans-serif" }}>Restablece tu contraseña</h2>
-            <p className="text-slate-500 text-sm mb-8">Elige una opción para recuperar el acceso a tu cuenta.</p>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="field-label">Correo electrónico</label>
-                <input
-                  type="email" value={email}
-                  onChange={(e) => { setEmail(e.target.value); setError('') }}
-                  className={`field-input ${error ? 'border-red-400' : ''}`}
-                  placeholder="tu@empresa.com"
-                />
-                {error && <p className="field-error">{error}</p>}
-              </div>
-              <button type="submit" disabled={loading} className="btn-primary w-full py-3">
-                {loading ? <span className="spinner" /> : 'Enviar enlace'}
-              </button>
-            </form>
+            <p className="text-slate-500 text-sm mb-8">Elige uno de los métodos disponibles para recuperar el acceso a tu cuenta.</p>
 
-            <div className="flex items-center gap-3 my-6">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5">
+              <h3 className="text-sm font-semibold text-slate-900 mb-1">Recuperar mediante correo</h3>
+              <p className="text-xs text-slate-500 mb-4">Recibirás un enlace temporal en el correo asociado a tu cuenta.</p>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label className="field-label">Correo electrónico</label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => { setEmail(e.target.value); setError('') }}
+                    className={`field-input ${error ? 'border-red-400' : ''}`}
+                    placeholder="tu@empresa.com"
+                  />
+                  {error && <p className="field-error">{error}</p>}
+                </div>
+                <button type="submit" disabled={loading} className="btn-primary w-full py-3">
+                  {loading ? <span className="spinner" /> : 'Enviar enlace'}
+                </button>
+              </form>
+            </div>
+
+            <div className="flex items-center gap-3 my-5">
               <div className="h-px bg-slate-200 flex-1" />
               <span className="text-xs font-medium text-slate-400 uppercase">o</span>
               <div className="h-px bg-slate-200 flex-1" />
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5">
               <div className="flex items-start gap-3 mb-4">
                 <div className="w-10 h-10 rounded-xl bg-azure-50 flex items-center justify-center shrink-0">
                   <QrCode className="w-5 h-5 text-azure-500" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-semibold text-slate-900">Recuperar con código QR</h3>
+                  <h3 className="text-sm font-semibold text-slate-900">Recuperar mediante QR</h3>
                   <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                    Si tienes un código QR de recuperación asignado a tu cuenta, selecciónalo para continuar.
+                    Valida tu cuenta con tu código de recuperación y genera un QR temporal de un solo uso.
                   </p>
                 </div>
               </div>
-              <label className="btn-secondary w-full justify-center cursor-pointer">
-                <Upload className="w-4 h-4" />
-                Cargar código QR
-                <input type="file" accept="image/*" onChange={handleQrFile} className="hidden" />
-              </label>
-              <div id="qr-file-reader" className="hidden" />
+
+              <form onSubmit={handleGenerateQr} className="space-y-4">
+                <div>
+                  <label className="field-label">Correo electrónico</label>
+                  <input
+                    type="email"
+                    value={qrEmail}
+                    onChange={(e) => { setQrEmail(e.target.value); setQrError(''); setQrUrl('') }}
+                    className="field-input"
+                    placeholder="tu@empresa.com"
+                  />
+                </div>
+                <div>
+                  <label className="field-label">Código de recuperación</label>
+                  <input
+                    type="text"
+                    value={recoveryCode}
+                    onChange={(e) => { setRecoveryCode(e.target.value.toUpperCase()); setQrError(''); setQrUrl('') }}
+                    className={`field-input ${qrError ? 'border-red-400' : ''}`}
+                    placeholder="RP-XXXX-XXXX-XXXX"
+                    autoComplete="off"
+                  />
+                  {qrError && <p className="field-error">{qrError}</p>}
+                </div>
+                <button type="submit" disabled={qrLoading} className="btn-secondary w-full justify-center py-3">
+                  {qrLoading ? <span className="spinner" /> : 'Generar código QR'}
+                </button>
+              </form>
+
+              {qrUrl && (
+                <div className="mt-5 text-center">
+                  <img src={qrUrl} alt="Código QR de recuperación" className="w-48 h-48 mx-auto rounded-xl border border-slate-200" />
+                  <p className="text-xs text-slate-500 mt-3">
+                    Escanea este QR con tu celular. Es válido durante 10 minutos y deja de funcionar después de restablecer la contraseña.
+                  </p>
+                </div>
+              )}
             </div>
           </>
         )}

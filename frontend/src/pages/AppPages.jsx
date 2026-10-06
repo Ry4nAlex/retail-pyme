@@ -1842,34 +1842,34 @@ export function UsersPage() {
   }
 };
 
-  const generateRecoveryQR = async (u) => {
-    try {
-      const response = await authService.generateRecoveryQR(u.id);
+const generateRecoveryCode = async (u) => {
+  try {
+    const response = await authService.generateRecoveryQR(u.id);
+    const recoveryCode = response.data?.recovery_code;
 
-      const url = window.URL.createObjectURL(
-        new Blob([response.data], { type: "image/png" })
-      );
-
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `recuperacion-${u.name
-        .replace(/\s+/g, "-")
-        .toLowerCase()}.png`;
-
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-
-      window.URL.revokeObjectURL(url);
-
-      toast.success(`QR de recuperación generado para ${u.name}`);
-    } catch (e) {
-      toast.error(
-        e.response?.data?.detail ||
-        "No se pudo generar el QR de recuperación"
-      );
+    if (!recoveryCode) {
+      toast.error("No se pudo generar el código de recuperación");
+      return;
     }
-  };
+
+    await navigator.clipboard.writeText(recoveryCode);
+
+    window.alert(
+      `Código de recuperación para ${u.name}:\n\n` +
+      `${recoveryCode}\n\n` +
+      `El código se copió al portapapeles.\n\n` +
+      `Entrégalo al usuario y pídele que lo guarde en un lugar seguro. ` +
+      `Si generas un nuevo código, el anterior dejará de funcionar.`
+    );
+
+    toast.success("Código de recuperación generado y copiado");
+  } catch (e) {
+    toast.error(
+      e.response?.data?.detail ||
+      "No se pudo generar el código de recuperación"
+    );
+  }
+};
 
   const F = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const companyName = (id) => companies.find((c) => c.id === id)?.name || "-";
@@ -1918,12 +1918,12 @@ export function UsersPage() {
                 <td className="table-td">
                   <div className="flex gap-1">
   <button
-    onClick={() => generateRecoveryQR(u)}
-    className="btn-ghost px-2 py-1.5 text-blue-600 hover:bg-blue-50"
-    title="Generar QR de recuperación"
-  >
-    QR
-  </button>
+  onClick={() => generateRecoveryCode(u)}
+  className="btn-ghost px-2 py-1.5 text-blue-600 hover:bg-blue-50"
+  title="Generar código de recuperación"
+>
+  Código
+</button>
 
   <button
     onClick={() => openEdit(u)}
