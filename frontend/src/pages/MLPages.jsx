@@ -44,8 +44,9 @@ export function DatasetsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold text-slate-900" style={{ fontFamily: "'Sora', sans-serif" }}>Conjunto de datos</h1>
-        <p className="text-slate-500 text-sm mt-0.5">Carga unificada de productos, inventario y ventas de la empresa</p>
+        <h1 className="text-xl font-bold text-slate-900" style={{ fontFamily: "'Sora', sans-serif" }}>Datos históricos</h1>
+        <p className="text-slate-500 text-sm mt-0.5">  Carga y procesa datos históricos de productos, inventario y demanda para el análisis predictivo
+</p>
       </div>
 
       <IngestPage embedded />
@@ -1114,7 +1115,7 @@ export function PredictionsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-bold text-slate-900" style={{ fontFamily: "'Sora', sans-serif" }}>Predicciones</h1>
-        <p className="text-slate-500 text-sm mt-0.5">Consulta pronosticos de demanda, cobertura y alertas por producto</p>
+        <p className="text-slate-500 text-sm mt-0.5">Consulta pronósticos XGBoost, cobertura y alertas de inventario por producto farmacéutico</p>
       </div>
 
       {analyses.length === 0 ? (

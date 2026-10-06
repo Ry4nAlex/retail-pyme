@@ -1165,9 +1165,9 @@ const sendAgentMessage = async (customMessage = null) => {
         </p>
 
         <p className="text-sm text-slate-500 mt-1">
-          Las métricas de validación, experimento,
-          ablación y gestión se encuentran en el
-          módulo Evaluación experimental.
+          Las métricas de validación temporal, experimento,
+ablación y evaluación de inventario se encuentran en el
+módulo Evaluación experimental.
         </p>
 
       </div>

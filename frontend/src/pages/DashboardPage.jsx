@@ -473,8 +473,8 @@ export default function DashboardPage() {
         </h1>
 
         <p className="text-slate-500 text-sm mt-0.5">
-          Resumen operativo para la gestión de inventario
-        </p>
+  Resumen operativo del inventario farmacéutico
+</p>
 
       </div>
 
@@ -539,8 +539,8 @@ export default function DashboardPage() {
             </h3>
 
             <p className="text-xs text-slate-400 mt-1">
-              Distribución según los niveles actuales de stock
-            </p>
+  Distribución de productos farmacéuticos según sus niveles de stock
+</p>
 
           </div>
 

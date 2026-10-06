@@ -5,9 +5,21 @@ import { Eye, EyeOff, ArrowRight, BarChart3, TrendingUp, Package } from 'lucide-
 import toast from 'react-hot-toast'
 
 const FEATURE_ITEMS = [
-  { icon: BarChart3, title: 'Analítica en tiempo real', desc: 'Monitorea el rendimiento de ventas con paneles en vivo e indicadores clave.' },
-  { icon: TrendingUp, title: 'Pronóstico de demanda', desc: 'Predicciones con aprendizaje automático para optimizar niveles de inventario.' },
-  { icon: Package, title: 'Inventario inteligente', desc: 'Alertas automáticas y recomendaciones de reposición.' },
+  {
+    icon: BarChart3,
+    title: 'Análisis de inventario',
+    desc: 'Visualiza el estado del inventario, niveles de stock e indicadores clave.'
+  },
+  {
+    icon: TrendingUp,
+    title: 'Predicción de demanda',
+    desc: 'Pronósticos con XGBoost para anticipar la demanda de productos farmacéuticos.'
+  },
+  {
+    icon: Package,
+    title: 'Reabastecimiento inteligente',
+    desc: 'Alertas y recomendaciones para apoyar las decisiones de reabastecimiento.'
+  },
 ]
 
 export default function LoginPage() {
@@ -66,8 +78,8 @@ export default function LoginPage() {
               <TrendingUp className="w-5 h-5 text-white" />
             </div>
             <div>
-              <span className="font-display font-700 text-white text-xl tracking-tight">RetailPyme</span>
-              <span className="ml-2 text-xs font-medium text-blue-400 bg-blue-400/10 px-2 py-0.5 rounded-full border border-blue-400/20">Predictivo</span>
+              <span className="font-display font-700 text-white text-xl tracking-tight">FarmaStock AI</span>
+              <span className="ml-2 text-xs font-medium text-blue-400 bg-blue-400/10 px-2 py-0.5 rounded-full border border-blue-400/20">IXGBOOST + IA</span>
             </div>
           </div>
         </div>
@@ -76,13 +88,13 @@ export default function LoginPage() {
         <div className="relative z-10 flex-1 flex flex-col justify-center py-16">
           <h1 className="font-display text-5xl font-bold text-white leading-tight mb-6"
             style={{ fontFamily: "'Sora', sans-serif", letterSpacing: '-1.5px' }}>
-            Inteligencia de retail<br />
-            <span style={{ background: 'linear-gradient(90deg, #60a5fa, #93c5fd)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-              basada en datos
-            </span>
+            Gestión inteligente de<br />
+<span style={{ background: 'linear-gradient(90deg, #60a5fa, #93c5fd)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+  inventario farmacéutico
+</span>
           </h1>
           <p className="text-slate-400 text-lg leading-relaxed mb-12 max-w-md">
-            Centraliza tus ventas, predice la demanda y toma mejores decisiones de inventario en una sola plataforma.
+            Predice la demanda, analiza el inventario y obtén recomendaciones de reabastecimiento en una sola plataforma.
           </p>
 
           <div className="space-y-5">
@@ -103,7 +115,7 @@ export default function LoginPage() {
         {/* Bottom */}
         <div className="relative z-10">
           <p className="text-slate-600 text-xs">
-            © {new Date().getFullYear()} RetailPyme - Proyecto de investigación UPC
+            © {new Date().getFullYear()} FarmaStock AI - Proyecto de investigación UPC
           </p>
         </div>
       </div>
@@ -117,7 +129,7 @@ export default function LoginPage() {
             <div className="w-8 h-8 rounded-lg bg-azure-500 flex items-center justify-center">
               <TrendingUp className="w-4 h-4 text-white" />
             </div>
-            <span className="font-display font-bold text-slate-900 text-lg">RetailPyme</span>
+            <span className="font-display font-bold text-slate-900 text-lg">FarmaStock AI</span>
           </div>
 
           <div className="mb-8">

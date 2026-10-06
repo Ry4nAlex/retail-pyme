@@ -213,7 +213,7 @@ export function ProductsPage() {
           >
             Productos
           </h1>
-          <p className="text-slate-500 text-sm">{total} productos</p>
+          <p className="text-slate-500 text-sm">{total} productos registrados</p>
         </div>
         <div className="flex gap-2">
           <button onClick={openCreate} className="btn-primary">
@@ -1293,7 +1293,7 @@ export function CategoriesPage() {
           Categorías
         </h1>
         <p className="text-slate-500 text-sm">
-          Organize products into categories
+            Organiza los productos farmacéuticos por categorías
         </p>
       </div>
       <div className="card p-6 space-y-4">
@@ -1551,7 +1551,7 @@ const COMPANY_EMPTY = {
   address: "",
   phone: "",
   email: "",
-  industry: "retail",
+  industry: "farmacéutico",
   city: "Lima",
   country: "Peru",
   active: true,
@@ -1588,7 +1588,7 @@ export function CompaniesPage() {
       address: company.address || "",
       phone: company.phone || "",
       email: company.email || "",
-      industry: company.industry || "retail",
+      industry: company.industry || "farmacéutico",
       city: company.city || "Lima",
       country: company.country || "Peru",
       active: company.active,
@@ -1631,7 +1631,7 @@ export function CompaniesPage() {
               <ShieldCheck className="h-3.5 w-3.5" />
               SuperAdmin
             </div>
-            <h1 className="mt-4 text-2xl font-bold">Gestión de empresas PYME</h1>
+            <h1 className="mt-4 text-2xl font-bold">Gestión de empresas farmacéuticas</h1>
             <p className="mt-1 text-sm text-slate-300">
               Administra cuentas, datos fiscales y estado operativo de cada empresa.
             </p>
@@ -1673,7 +1673,7 @@ export function CompaniesPage() {
             </div>
             <div className="mt-4 space-y-2 text-sm text-slate-500">
               <p>{company.email || "Sin correo registrado"}</p>
-              <p>{company.city || "Lima"} · {company.industry || "retail"}</p>
+              <p>{company.city || "Lima"} · {company.industry || "farmacéutico"}</p>
             </div>
             <div className="mt-5 flex gap-2">
               <button onClick={() => openEdit(company)} className="btn-secondary py-2 px-3">

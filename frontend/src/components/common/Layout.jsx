@@ -20,21 +20,21 @@ const NAV = {
     { to: '/products', icon: Package, label: 'Productos' },
     { to: '/inventory', icon: TrendingUp, label: 'Inventario' },
     { to: '/categories', icon: Tag, label: 'Categorias' },
-    { divider: true, label: 'Aprendizaje automatico' },
-    { to: '/ml/datasets', icon: Database, label: 'Conjunto de datos' },
-    { to: '/ml/predictions', icon: Brain, label: 'Predicciones' },
-    { to: '/ml/stock-analysis', icon: PackageSearch, label: 'Analisis de stock' },
-    { to: '/ml/evaluation', icon: Brain, label: 'Evaluacion experimental' },
+    { divider: true, label: 'Inteligencia predictiva' },
+{ to: '/ml/datasets', icon: Database, label: 'Datos históricos' },
+{ to: '/ml/predictions', icon: Brain, label: 'Predicción de demanda' },
+{ to: '/ml/stock-analysis', icon: PackageSearch, label: 'Análisis y reabastecimiento' },
+{ to: '/ml/evaluation', icon: Brain, label: 'Evaluación experimental' },
     { divider: true, label: 'Administracion' },
     { to: '/users', icon: UserCog, label: 'Usuarios' },
   ],
   client: [
     { to: '/dashboard', icon: LayoutDashboard, label: 'Panel' },
-    { to: '/sales', icon: ShoppingCart, label: 'Ventas' },
+    { to: '/sales', icon: ShoppingCart, label: 'Historial de Ventas' },
     { to: '/products', icon: Package, label: 'Productos' },
     { to: '/inventory', icon: TrendingUp, label: 'Inventario' },
-    { to: '/ml/predictions', icon: Brain, label: 'Predicciones' },
-    { to: '/ml/stock-analysis', icon: PackageSearch, label: 'Analisis de stock' },
+    { to: '/ml/predictions', icon: Brain, label: 'Predicción de demanda' },
+{ to: '/ml/stock-analysis', icon: PackageSearch, label: 'Análisis y reabastecimiento' },
   ],
 }
 
@@ -110,8 +110,8 @@ const handleRecoveryCode = async () => {
             <TrendingUp className="w-4 h-4 text-white" />
           </div>
           <div>
-            <p className="text-white font-bold text-sm" style={{ fontFamily: "'Sora', sans-serif" }}>RetailPyme</p>
-            <p className="text-slate-500 text-xs">Sistema predictivo</p>
+            <p className="text-white font-bold text-sm" style={{ fontFamily: "'Sora', sans-serif" }}>FarmaStock AI</p>
+<p className="text-slate-500 text-xs">XGBoost + IA</p>
           </div>
         </div>
         {onClose && (

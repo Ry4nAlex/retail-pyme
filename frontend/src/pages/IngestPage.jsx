@@ -1257,11 +1257,11 @@ export default function IngestPage({ embedded = false }) {
             <h3 className="font-semibold text-slate-800 text-sm mb-3">Ya puedes revisar</h3>
             <div className="flex flex-wrap gap-2">
               <QuickLink icon={LayoutDashboard} label="Panel" to="/dashboard" />
-              <QuickLink icon={Package} label="Inventario" to="/inventory" />
-              <QuickLink icon={ShoppingCart} label="Ventas" to="/sales" />
-              <QuickLink icon={PackageSearch} label="Análisis de stock" to="/ml/stock-analysis" />
-              <QuickLink icon={Brain} label="Predicciones" to="/ml/predictions" />
-              <QuickLink icon={Brain} label="Evaluación experimental" to="/ml/evaluation"/>
+<QuickLink icon={Package} label="Inventario" to="/inventory" />
+<QuickLink icon={ShoppingCart} label="Historial de ventas" to="/sales" />
+<QuickLink icon={PackageSearch} label="Análisis y reabastecimiento" to="/ml/stock-analysis" />
+<QuickLink icon={Brain} label="Predicción de demanda" to="/ml/predictions" />
+<QuickLink icon={Brain} label="Evaluación experimental" to="/ml/evaluation"/>
             </div>
           </div>
         </div>
