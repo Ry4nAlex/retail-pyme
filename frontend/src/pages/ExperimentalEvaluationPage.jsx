@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Brain, Loader2, RefreshCw, AlertTriangle, Boxes } from 'lucide-react'
+import { Brain, Loader2, RefreshCw, Download, AlertTriangle, Boxes } from 'lucide-react'
 
 import { mlService, agentService } from '../services/api'
 
@@ -978,9 +978,11 @@ function AgentLanguageEvaluationCard({ result, loading, error, onRun }) {
   const cases = result?.cases || []
 
   const statusBadge = (value) => (
-    value
-      ? <span className="inline-flex rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">Cumple</span>
-      : <span className="inline-flex rounded-full bg-red-50 px-2 py-1 text-xs font-semibold text-red-700">No cumple</span>
+    value == null
+      ? <span className="inline-flex rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">No evaluado</span>
+      : value
+        ? <span className="inline-flex rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">Cumple</span>
+        : <span className="inline-flex rounded-full bg-red-50 px-2 py-1 text-xs font-semibold text-red-700">No cumple</span>
   )
 
   return (
@@ -1021,12 +1023,13 @@ function AgentLanguageEvaluationCard({ result, loading, error, onRun }) {
 
       {result && (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4">
             {[
               ['Cumplimiento de selección', summary.compliance_pct != null ? `${summary.compliance_pct} %` : '-'],
-              ['Casos evaluados', summary.total_cases ?? '-'],
+              ['Casos evaluados', summary.evaluated_cases ?? summary.total_cases ?? '-'],
               ['Cumplen', summary.passed ?? '-'],
               ['No cumplen', summary.failed ?? '-'],
+              ['No evaluados', summary.not_evaluated ?? 0],
             ].map(([label, value]) => (
               <div key={label} className="rounded-xl border border-slate-200 p-3">
                 <p className="text-xs text-slate-400">{label}</p>
@@ -1051,7 +1054,7 @@ function AgentLanguageEvaluationCard({ result, loading, error, onRun }) {
                     <td className="py-3 pr-3 font-medium text-slate-700">{item.name}</td>
                     <td className="py-3 pr-3 text-slate-500">{item.expected_tool || '-'}</td>
                     <td className="py-3 pr-3 text-slate-500">
-                      {item.selected_tools?.length ? item.selected_tools.join(', ') : 'Ninguna'}
+                      {item.passed == null ? 'No evaluado' : item.selected_tools?.length ? item.selected_tools.join(', ') : 'Ninguna'}
                     </td>
                     <td className="py-3 pr-3">{statusBadge(item.passed)}</td>
                   </tr>
@@ -1071,6 +1074,7 @@ export default function ExperimentalEvaluationPage() {
   const [loading, setLoading] = useState(true)
   const [evaluation, setEvaluation] = useState(null)
   const [metadata, setMetadata] = useState(null)
+  const [availableAnalyses, setAvailableAnalyses] = useState([])
   const [error, setError] = useState(null)
   const [agentEvaluation, setAgentEvaluation] = useState(null)
   const [agentEvaluationLoading, setAgentEvaluationLoading] = useState(false)
@@ -1079,7 +1083,7 @@ export default function ExperimentalEvaluationPage() {
   const [agentLanguageEvaluationLoading, setAgentLanguageEvaluationLoading] = useState(false)
   const [agentLanguageEvaluationError, setAgentLanguageEvaluationError] = useState(null)
 
-  const loadLatestExperiment = useCallback(async () => {
+  const loadLatestExperiment = useCallback(async (requestedId = null) => {
     setLoading(true)
     setError(null)
     setAgentEvaluation(null)
@@ -1089,53 +1093,41 @@ export default function ExperimentalEvaluationPage() {
 
     try {
       const listResponse = await mlService.listAnalyses()
-      const analyses = listResponse.data || []
+      const analyses = Array.isArray(listResponse.data) ? listResponse.data : []
+      // Solo los análisis que ya tienen una evaluación experimental almacenada.
+      const eligible = analyses.filter((item) => item?.metrics?.full_paper)
+      setAvailableAnalyses(eligible)
 
-      const experimentalAnalysis = analyses.find(
-        (item) => item?.metrics?.full_paper
-      )
-
-      if (!experimentalAnalysis) {
+      const selected = eligible.find((item) => String(item.id) === String(requestedId)) || eligible[0]
+      if (!selected) {
         setEvaluation(null)
         setMetadata(null)
-        setError(
-          'Todavía no existe una evaluación experimental guardada. ' +
-          'Ejecuta una desde el módulo Conjunto de datos.'
-        )
+        setError('No hay evaluaciones experimentales guardadas en los análisis disponibles.')
         return
       }
 
-      const detailResponse = await mlService.getAnalysis(experimentalAnalysis.id)
+      const detailResponse = await mlService.getAnalysis(selected.id)
       const detail = detailResponse.data
-
-      const storedEvaluation =
-        detail?.result?.metrics?.full_paper ||
-        detail?.metrics?.full_paper
-
+      const storedEvaluation = detail?.result?.metrics?.full_paper || detail?.metrics?.full_paper
       if (!storedEvaluation) {
-        throw new Error(
-          'El análisis guardado no contiene resultados de evaluación experimental.'
-        )
+        throw new Error('El análisis seleccionado no contiene resultados experimentales.')
       }
 
       setEvaluation(storedEvaluation)
       setMetadata({
-        id: detail.id,
-        sourceFilename: detail.source_filename,
-        createdAt: detail.created_at,
+        id: detail.id || selected.id,
+        sourceFilename: detail.source_filename || selected.source_filename,
+        createdAt: detail.created_at || selected.created_at,
       })
     } catch (err) {
       console.error(err)
-      setError(
-        err?.response?.data?.detail ||
-        err?.message ||
-        'No se pudo cargar la evaluación experimental.'
-      )
+      setEvaluation(null)
+      setMetadata(null)
+      setError(err?.response?.data?.detail || err?.message || 'No se pudo cargar la evaluación experimental.')
     } finally {
       setLoading(false)
     }
   }, [])
-
 
   const runAgentEvaluation = useCallback(async () => {
     if (!metadata?.id) return
@@ -1178,6 +1170,45 @@ export default function ExperimentalEvaluationPage() {
     }
   }, [metadata?.id])
 
+  // Exporta exclusivamente los resultados ya guardados o evaluados;
+  // no reentrena XGBoost, no llama a Gemini y no modifica el inventario.
+  const downloadEvidence = useCallback(() => {
+    if (!evaluation) return
+
+    const evidence = {
+      system: 'FarmaStock AI',
+      purpose: 'Memoria de tesis - evidencia experimental',
+      generated_at: new Date().toISOString(),
+      data_source: {
+        analysis_id: metadata?.id ?? null,
+        file_name: metadata?.sourceFilename ?? null,
+        analysis_created_at: metadata?.createdAt ?? null,
+      },
+      methodology: {
+        dataset_origin: 'Un mismo conjunto de datos históricos',
+        development_split: '80/20 cronológico en el período de desarrollo',
+        independent_evaluation: 'Últimos 6 meses separados del desarrollo',
+        note: 'No implica disponer de un segundo dataset externo. Los resultados proceden del análisis almacenado.',
+      },
+      xgboost_evaluation: evaluation,
+      deterministic_agent_evaluation: agentEvaluation ?? null,
+      gemini_language_evaluation: agentLanguageEvaluation ?? null,
+      interpretation_note: 'Una evaluación de Gemini no ejecutada o bloqueada por cuota no representa un fallo del agente.',
+    }
+
+    const blob = new Blob([JSON.stringify(evidence, null, 2)], {
+      type: 'application/json;charset=utf-8',
+    })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'farmastock_evidencia_experimental.json'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }, [evaluation, metadata, agentEvaluation, agentLanguageEvaluation])
+
   useEffect(() => {
     loadLatestExperiment()
   }, [loadLatestExperiment])
@@ -1210,14 +1241,27 @@ export default function ExperimentalEvaluationPage() {
           </p>
         </div>
 
+        <div className="flex items-center gap-2 flex-wrap">
+          {evaluation && (
+            <button
+              type="button"
+              onClick={downloadEvidence}
+              className="btn-secondary flex items-center gap-2"
+              title="Descargar resultados existentes, sin nuevas consultas a Gemini"
+            >
+              <Download className="w-4 h-4" />
+              Exportar evidencia JSON
+            </button>
+          )}
         <button
           type="button"
-          onClick={loadLatestExperiment}
+          onClick={() => loadLatestExperiment(metadata?.id)}
           className="btn-secondary flex items-center gap-2"
         >
           <RefreshCw className="w-4 h-4" />
           Actualizar
         </button>
+        </div>
       </div>
 
       {error && (
@@ -1231,6 +1275,30 @@ export default function ExperimentalEvaluationPage() {
               <p className="text-sm text-slate-500 mt-1">{error}</p>
             </div>
           </div>
+        </div>
+      )}
+
+      {availableAnalyses.length > 0 && (
+        <div className="card p-4">
+          <label htmlFor="experiment-analysis-select" className="block text-sm font-medium text-slate-700 mb-2">
+            Análisis experimental guardado
+          </label>
+          <select
+            id="experiment-analysis-select"
+            className="w-full rounded-lg border border-slate-300 bg-white p-2 text-sm text-slate-800"
+            value={metadata?.id || ''}
+            onChange={(event) => loadLatestExperiment(event.target.value)}
+            disabled={loading}
+          >
+            {availableAnalyses.map((item) => (
+              <option key={item.id} value={item.id}>
+                {(item.source_filename || 'Análisis sin nombre') + ' — ' + formatDate(item.created_at)}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-slate-500 mt-2">
+            Solo aparecen análisis con resultados experimentales guardados; cambiar de selección no entrena modelos ni consume Gemini.
+          </p>
         </div>
       )}
 
@@ -1251,6 +1319,15 @@ export default function ExperimentalEvaluationPage() {
             </p>
           </div>
         </div>
+      )}
+
+      {evaluation && (
+        <p className="text-xs text-slate-500">
+          Protocolo de tesis: el experimento reserva los seis últimos meses del
+          mismo dataset histórico; dentro del período de desarrollo se usa una
+          división cronológica 80/20. La descarga conserva los resultados
+          existentes, sin repetir cálculos ni consumir Gemini.
+        </p>
       )}
 
       {evaluation && <ExperimentalResultsCard evaluation={evaluation} />}

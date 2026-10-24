@@ -23,7 +23,7 @@ from app.forecasting import (
 # RESULTADO DE TUNING DEL DESARROLLO (30 CONFIGURACIONES)
 # =========================================================
 # La búsqueda se ejecutó sobre el bloque de desarrollo con
-# seed=42 y 8 ventanas walk-forward. En la aplicación cloud
+# seed=42 y 8 ventanas walk-forward. En la aplicación
 # se reutiliza su configuración ganadora para no repetir 240
 # entrenamientos cada vez que se consulta el mismo experimento.
 PAPER_SEARCH_BEST = {
@@ -106,6 +106,20 @@ def _split_development_experiment(
         raise ValueError(
             "No existen suficientes meses para separar "
             "desarrollo y experimento."
+        )
+
+    # Los seis meses reservados deben ser meses calendario consecutivos;
+    # no basta con tomar seis meses observados si faltan períodos intermedios.
+    experiment_periods = pd.PeriodIndex(
+        pd.to_datetime(months[-experiment_months:]), freq="M"
+    )
+    expected_periods = pd.period_range(
+        end=experiment_periods[-1], periods=experiment_months, freq="M"
+    )
+    if not experiment_periods.equals(expected_periods):
+        raise ValueError(
+            "El experimento requiere 6 meses calendario consecutivos. "
+            "Revisa los meses faltantes del dataset antes de evaluarlo."
         )
 
     experiment_target_months = months[-experiment_months:]
@@ -770,8 +784,9 @@ def _inventory_experiment_metrics(
                 .copy()
             )
 
-            # Inventario inicial idéntico
-            # para todas las estrategias.
+            # Todas las estrategias parten del MISMO inventario inicial,
+            # calculado con la cobertura de referencia (45 dias por defecto).
+            # La cobertura del escenario solo cambia el objetivo de reposicion.
             initial_reference = max(
                 0.1,
                 float(
@@ -784,7 +799,7 @@ def _inventory_experiment_metrics(
             stock = (
                 initial_reference
                 / 30.0
-                * target_coverage_days
+                * target_days
             )
 
             for _, row in g.iterrows():
@@ -1358,6 +1373,13 @@ def _inventory_experiment_metrics(
                 ),
         },
 
+        "simulation_assumptions": {
+            "initial_inventory": "Igual para todas las estrategias: demanda historica de 3 meses multiplicada por cobertura de referencia",
+            "initial_coverage_days": target_days,
+            "replenishment_timing": "Reposicion simulada al inicio de cada mes, sin tiempo de entrega",
+            "actual_demand_used_for": "Evaluacion del cumplimiento, no para calcular el pedido mensual",
+            "interpretation": "Resultados simulados, no reducciones reales observadas en una farmacia",
+        },
         "policy": {
             "understock_threshold_days":
                 understock_days,
@@ -1854,6 +1876,21 @@ def run_full_paper_experiment(
         )
     )
 
+    # Protocolo de la memoria: un único dataset cronológico.
+    # Los últimos 6 meses quedan aislados; el 80/20 se aplica
+    # únicamente a los meses utilizables del desarrollo.
+    # No se trata de un segundo dataset externo.
+    if experiment_months != 6:
+        raise ValueError(
+            "La evaluación de FarmaStock AI reserva exactamente "
+            "6 meses para el experimento independiente."
+        )
+    if abs(validation_train_ratio - 0.80) > 1e-9:
+        raise ValueError(
+            "La evaluación de FarmaStock AI utiliza 80/20 "
+            "cronológico dentro del bloque de desarrollo."
+        )
+
     # -----------------------------------------
     # Preparación completa
     # -----------------------------------------
@@ -2055,12 +2092,26 @@ def run_full_paper_experiment(
 
             "experiment_isolated":
                 True,
+            "dataset_origin": "single_historical_dataset",
+            "experiment_source": "last_six_months_of_same_dataset",
+            "model_selection_data": "development_only",
+            "hyperparameters_recomputed": recompute_random_search,
+            "hyperparameter_source": (
+                "recomputed_on_current_development"
+                if recompute_random_search
+                else "reused_previous_search_not_revalidated_on_current_dataset"
+            ),
 
             "experiment_evaluation_mode":
                 (
                     "rolling_one_step_ahead_"
                     "without_model_refit"
                 ),
+            "experiment_lag_source": "observed_previous_months",
+            "experiment_interpretation": (
+                "Evaluacion temporal de un paso adelante con rezagos "
+                "observados; no es un pronostico recursivo de seis meses."
+            ),
         },
 
         "partition":

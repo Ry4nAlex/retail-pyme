@@ -41,15 +41,189 @@ const statusLabels = {
 }
 
 export function DatasetsPage() {
+  const [datasets, setDatasets] = useState([])
+  const [loadingDatasets, setLoadingDatasets] = useState(true)
+  const [deletingId, setDeletingId] = useState(null)
+
+  const loadDatasets = async () => {
+    setLoadingDatasets(true)
+    try {
+      const response = await mlService.listDatasets()
+      setDatasets(response.data || [])
+    } catch (error) {
+      console.error('Error al cargar datasets:', error)
+      toast.error('No se pudieron cargar los datasets')
+    } finally {
+      setLoadingDatasets(false)
+    }
+  }
+
+  useEffect(() => {
+    loadDatasets()
+  }, [])
+
+  const deleteDataset = async (dataset) => {
+    const confirmed = window.confirm(
+      `¿Eliminar "${dataset.original_name}"?\n\n` +
+      'También se eliminarán las ventas y los ítems de venta asociados a esta carga.'
+    )
+
+    if (!confirmed) return
+
+    setDeletingId(dataset.id)
+
+    try {
+      await mlService.deleteDataset(dataset.id)
+      toast.success('Dataset y datos asociados eliminados')
+      await loadDatasets()
+    } catch (error) {
+      console.error('Error al eliminar dataset:', error)
+      toast.error(
+        error.response?.data?.detail ||
+        'No se pudo eliminar el dataset'
+      )
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  const formatBytes = (bytes) => {
+    const value = Number(bytes || 0)
+    if (!value) return '-'
+    if (value < 1024) return `${value} B`
+    if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`
+    return `${(value / 1024 / 1024).toFixed(2)} MB`
+  }
+
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold text-slate-900" style={{ fontFamily: "'Sora', sans-serif" }}>Datos históricos</h1>
-        <p className="text-slate-500 text-sm mt-0.5">  Carga y procesa datos históricos de productos, inventario y demanda para el análisis predictivo
-</p>
+        <h1
+          className="text-xl font-bold text-slate-900"
+          style={{ fontFamily: "'Sora', sans-serif" }}
+        >
+          Datos históricos
+        </h1>
+        <p className="text-slate-500 text-sm mt-0.5">
+          Carga y procesa datos históricos de productos, inventario y demanda para el análisis predictivo
+        </p>
       </div>
 
       <IngestPage embedded />
+
+      <div className="card p-5">
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div>
+            <h3 className="font-semibold text-slate-800 flex items-center gap-2">
+              <Database className="w-4 h-4 text-azure-500" />
+              Cargas registradas
+            </h3>
+            <p className="text-xs text-slate-400 mt-1">
+              Al eliminar una carga también se eliminan sus ventas e ítems asociados.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={loadDatasets}
+            disabled={loadingDatasets}
+            className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900 disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${loadingDatasets ? 'animate-spin' : ''}`} />
+            Actualizar
+          </button>
+        </div>
+
+        {loadingDatasets ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-6 h-6 text-azure-500 animate-spin" />
+          </div>
+        ) : datasets.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-200 p-8 text-center">
+            <Database className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+            <p className="text-sm font-medium text-slate-700">No hay cargas registradas</p>
+            <p className="text-xs text-slate-400 mt-1">
+              Las nuevas cargas aparecerán aquí.
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-xl border border-slate-200">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-xs text-slate-500">
+                <tr>
+                  <th className="px-3 py-2 text-left">Archivo</th>
+                  <th className="px-3 py-2 text-left">Tipo</th>
+                  <th className="px-3 py-2 text-right">Filas</th>
+                  <th className="px-3 py-2 text-left">Estado</th>
+                  <th className="px-3 py-2 text-left">Fecha</th>
+                  <th className="px-3 py-2 text-right">Tamaño</th>
+                  <th className="px-3 py-2 text-right">Acciones</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {datasets.map((dataset) => (
+                  <tr key={dataset.id} className="border-t border-slate-100">
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-2 min-w-[240px]">
+                        <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="font-medium text-slate-700 truncate max-w-[320px]">
+                            {dataset.original_name}
+                          </p>
+                          {(dataset.date_from || dataset.date_to) && (
+                            <p className="text-[11px] text-slate-400 mt-0.5">
+                              {dataset.date_from || '-'} → {dataset.date_to || '-'}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+
+                    <td className="px-3 py-3 text-slate-600">
+                      {DATASET_TYPE_LABELS[dataset.dataset_type] || dataset.dataset_type || '-'}
+                    </td>
+
+                    <td className="px-3 py-3 text-right tabular-nums text-slate-700">
+                      {dataset.rows_total?.toLocaleString('es-PE') ?? '-'}
+                    </td>
+
+                    <td className="px-3 py-3">
+                      <StatusBadge status={dataset.status} />
+                    </td>
+
+                    <td className="px-3 py-3 text-slate-600 whitespace-nowrap">
+                      {dataset.created_at
+                        ? new Date(dataset.created_at).toLocaleString('es-PE')
+                        : '-'}
+                    </td>
+
+                    <td className="px-3 py-3 text-right text-slate-600 whitespace-nowrap">
+                      {formatBytes(dataset.file_size)}
+                    </td>
+
+                    <td className="px-3 py-3 text-right">
+                      <button
+                        type="button"
+                        onClick={() => deleteDataset(dataset)}
+                        disabled={deletingId === dataset.id}
+                        className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 hover:text-red-700 disabled:opacity-50"
+                      >
+                        {deletingId === dataset.id ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-4 h-4" />
+                        )}
+                        Eliminar
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -881,182 +1055,6 @@ function WalkForwardCard({ walkForward }) {
         </div>
       )}
 
-    </div>
-  )
-}
-
-// ───────── Métricas operativas cloud ─────────
-function CloudMetricsCard({cloud,benchmark,onRefresh,refreshing,}) {
-    if (!cloud) return null
-    const baseline = benchmark?.scenarios?.find((row) => row.vus === 1)
-  const big = [
-  {
-    icon: Timer,
-    color: 'text-blue-500',
-    label: 'Tiempo total de procesamiento',
-    value: fmtMs(cloud.total_processing_ms),
-    sub: `${cloud.records_processed?.toLocaleString('es-PE') || '-'} registros`,
-  },
-
-  {
-    icon: Gauge,
-    color: 'text-violet-500',
-    label: 'Tiempo de respuesta API (p95)',
-    value: fmtMs(baseline?.p95_ms),
-    sub: '1 usuario · prueba de 60 s',
-  },
-
-  {
-    icon: Zap,
-    color: 'text-amber-500',
-    label: 'Throughput de procesamiento',
-    value:
-      cloud.throughput_rps != null
-        ? cloud.throughput_rps.toLocaleString('es-PE')
-        : '-',
-    sub: 'registros / segundo',
-  },
-
-  {
-    icon: Server,
-    color: 'text-emerald-500',
-    label: 'Disponibilidad en pruebas',
-    value:
-      cloud.availability_pct != null
-        ? `${cloud.availability_pct}%`
-        : '-',
-    sub: 'health-checks OK',
-  },
-]
-  const stages = (cloud.stages_ms || []).map((s) => ({ name: s.stage, ms: s.ms }))
-  const palette = ['#3b82f6', '#6366f1', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444']
-  return (
-    <div className="card p-5">
-      <div className="flex items-center justify-between mb-1">
-        <h3 className="font-semibold text-slate-800 text-sm flex items-center gap-2"><Activity className="w-4 h-4 text-violet-500" />Métricas operativas cloud</h3>
-        {onRefresh && (
-          <button onClick={onRefresh} disabled={refreshing} className="text-xs flex items-center gap-1 text-slate-500 hover:text-slate-800 disabled:opacity-50">
-            <RefreshCw
-  className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`}
-/>
-Verificar disponibilidad
-          </button>
-        )}
-      </div>
-      <p className="text-xs text-slate-400 mb-4">
-        Evaluación operativa del flujo: subir dataset → backend → ETL → BD → modelo → dashboard. Procesamiento bajo demanda y respuesta del sistema.
-      </p>
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-5">
-        {big.map((m) => (
-          <div key={m.label} className="rounded-xl border border-slate-200 p-3">
-            <m.icon className={`w-4 h-4 ${m.color}`} />
-            <p className="text-[11px] text-slate-400 mt-1 leading-tight">{m.label}</p>
-            <p className="text-xl font-bold text-slate-900 mt-0.5">{m.value}</p>
-            <p className="text-[11px] text-slate-400">{m.sub}</p>
-          </div>
-        ))}
-      </div>
-      {benchmark?.scenarios?.length > 0 && (
-  <div className="mb-5">
-
-    <div className="flex items-center justify-between mb-2">
-      <div>
-        <p className="text-xs font-medium text-slate-600">
-          Prueba de rendimiento cliente-servidor
-        </p>
-
-        <p className="text-[11px] text-slate-400">
-          k6 · 60 segundos por escenario · API desplegada
-        </p>
-      </div>
-    </div>
-
-    <div className="overflow-x-auto rounded-xl border border-slate-200">
-      <table className="w-full text-sm">
-
-        <thead className="bg-slate-50 text-xs text-slate-500">
-          <tr>
-            <th className="px-3 py-2 text-right">
-              Usuarios
-            </th>
-
-            <th className="px-3 py-2 text-right">
-              p50
-            </th>
-
-            <th className="px-3 py-2 text-right">
-              p95
-            </th>
-
-            <th className="px-3 py-2 text-right">
-              p99
-            </th>
-
-            <th className="px-3 py-2 text-right">
-              req/s
-            </th>
-
-            <th className="px-3 py-2 text-right">
-              Error
-            </th>
-          </tr>
-        </thead>
-
-        <tbody>
-          {benchmark.scenarios.map((row) => (
-            <tr
-              key={row.vus}
-              className="border-t border-slate-100"
-            >
-              <td className="px-3 py-2 text-right font-medium">
-                {row.vus}
-              </td>
-
-              <td className="px-3 py-2 text-right">
-                {fmtMs(row.p50_ms)}
-              </td>
-
-              <td className="px-3 py-2 text-right font-semibold">
-                {fmtMs(row.p95_ms)}
-              </td>
-
-              <td className="px-3 py-2 text-right">
-                {fmtMs(row.p99_ms)}
-              </td>
-
-              <td className="px-3 py-2 text-right">
-                {row.requests_per_second}
-              </td>
-
-              <td className="px-3 py-2 text-right">
-                {row.error_pct}%
-              </td>
-            </tr>
-          ))}
-        </tbody>
-
-      </table>
-    </div>
-
-  </div>
-)}
-      {stages.length > 0 && (
-        <>
-          <p className="text-xs font-medium text-slate-500 mb-2">Tiempo por etapa (ms)</p>
-          <ResponsiveContainer width="100%" height={Math.max(160, stages.length * 34)}>
-            <BarChart data={stages} layout="vertical" barSize={16} margin={{ left: 12, right: 24 }}>
-              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
-              <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} unit=" ms" />
-              <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: '#64748b' }} width={190} />
-              <Tooltip contentStyle={{ borderRadius: 12, fontSize: 12 }} formatter={(v) => [`${v} ms`, 'Duración']} />
-              <Bar dataKey="ms" radius={[0, 6, 6, 0]}>
-                {stages.map((s, i) => <Cell key={i} fill={palette[i % palette.length]} />)}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </>
-      )}
-      {cloud.measured_at && <p className="text-[11px] text-slate-300 mt-3">Medido: {new Date(cloud.measured_at).toLocaleString('es-PE')}</p>}
     </div>
   )
 }

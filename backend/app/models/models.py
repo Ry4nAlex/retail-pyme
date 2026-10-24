@@ -112,18 +112,25 @@ class Sale(Base):
     __tablename__ = "sales"
     __table_args__ = (UniqueConstraint("company_id", "sale_number"),)
 
-    id             = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    company_id     = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
-    customer_id    = Column(UUID(as_uuid=True), ForeignKey("customers.id"))
-    sale_number    = Column(String(50), nullable=False)
-    sale_date      = Column(DateTime, default=datetime.utcnow)
-    subtotal       = Column(Numeric(12,2), default=0)
-    tax            = Column(Numeric(12,2), default=0)
-    total          = Column(Numeric(12,2), default=0)
-    payment_method = Column(String(30), default="cash")
-    status         = Column(String(20), default="completed")
-    notes          = Column(Text)
-    created_at     = Column(DateTime, default=datetime.utcnow)
+    id                = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    company_id        = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
+    customer_id       = Column(UUID(as_uuid=True), ForeignKey("customers.id"))
+
+    dataset_upload_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("dataset_uploads.id", ondelete="CASCADE"),
+        nullable=True
+    )
+
+    sale_number       = Column(String(50), nullable=False)
+    sale_date         = Column(DateTime, default=datetime.utcnow)
+    subtotal          = Column(Numeric(12,2), default=0)
+    tax               = Column(Numeric(12,2), default=0)
+    total             = Column(Numeric(12,2), default=0)
+    payment_method    = Column(String(30), default="cash")
+    status            = Column(String(20), default="completed")
+    notes             = Column(Text)
+    created_at        = Column(DateTime, default=datetime.utcnow)
 
     company  = relationship("Company", back_populates="sales")
     customer = relationship("Customer", back_populates="sales")

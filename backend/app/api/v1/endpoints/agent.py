@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import get_current_user
+from app.core.security import get_current_user, require_admin
 from app.db.database import get_db
 from app.models.models import StockAnalysis
 from app.services.inventory_agent import get_inventory_agent
@@ -18,6 +18,11 @@ router = APIRouter(
 )
 
 
+class AgentHistoryMessage(BaseModel):
+    role: str = Field(..., pattern="^(user|assistant)$")
+    content: str = Field(..., min_length=1, max_length=1500)
+
+
 class AgentChatRequest(BaseModel):
     message: str = Field(
         ...,
@@ -25,6 +30,8 @@ class AgentChatRequest(BaseModel):
         max_length=1000,
         description="Pregunta realizada al agente de inventario",
     )
+
+    history: list[AgentHistoryMessage] = Field(default_factory=list, max_length=10)
 
     analysis_id: Optional[UUID] = Field(
         default=None,
@@ -36,6 +43,7 @@ class AgentChatResponse(BaseModel):
     success: bool
     model: str
     response: str
+    tools_used: list[str] = Field(default_factory=list)
 
 
 class AgentActionRequest(BaseModel):
@@ -61,7 +69,7 @@ class AgentActionResponse(BaseModel):
 
 
 @router.get("/test")
-def test_agent():
+def test_agent(current_user: dict = Depends(require_admin)):
     """
     Comprueba que el backend puede comunicarse
     correctamente con Gemini.
@@ -202,7 +210,7 @@ class AgentEvaluationRequest(BaseModel):
 async def evaluate_agent(
     request: AgentEvaluationRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_admin),
 ):
     """
     Evalúa de forma reproducible las capacidades deterministas que sustentan
@@ -520,7 +528,7 @@ async def evaluate_agent(
 async def evaluate_agent_language(
     request: AgentEvaluationRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_admin),
 ):
     """
     Evalúa la capacidad de Gemini para interpretar consultas en lenguaje
@@ -590,19 +598,11 @@ async def evaluate_agent_language(
 
     results = []
 
-    for case in cases:
+    for index, case in enumerate(cases):
         try:
-            result = agent.chat(
-                message=case["prompt"],
-                analysis_context=context,
-                return_trace=True,
-            )
-
-            selected_tools = result.get("tool_trace", [])
+            selected_tools = agent.select_tool_for_evaluation(case["prompt"])
             expected_tool = case["expected_tool"]
-
             passed = expected_tool in selected_tools
-
             results.append({
                 "id": case["id"],
                 "name": case["name"],
@@ -610,39 +610,45 @@ async def evaluate_agent_language(
                 "expected_tool": expected_tool,
                 "selected_tools": selected_tools,
                 "passed": passed,
-                "response": result.get("response"),
+                "response": None,
                 "detail": (
                     f"Herramienta esperada: {expected_tool}; "
-                    f"seleccionadas: "
-                    f"{', '.join(selected_tools) if selected_tools else 'ninguna'}."
+                    f"seleccionadas: {', '.join(selected_tools) if selected_tools else 'ninguna'}."
                 ),
             })
-
         except RuntimeError as exc:
+            reason = str(exc)
+            print(f"[EVALUACION GEMINI] {type(exc).__name__}: {reason}", flush=True)
             results.append({
                 "id": case["id"],
                 "name": case["name"],
                 "prompt": case["prompt"],
                 "expected_tool": case["expected_tool"],
                 "selected_tools": [],
-                "passed": False,
+                "passed": None,
                 "response": None,
-                "detail": f"No se pudo completar la consulta: {str(exc)}",
+                "detail": f"No evaluado: {reason}",
             })
+            # Si se agotó la cuota, no gastar más solicitudes.
+            if "límite de consultas" in reason:
+                for pending in cases[index + 1:]:
+                    results.append({
+                        "id": pending["id"],
+                        "name": pending["name"],
+                        "prompt": pending["prompt"],
+                        "expected_tool": pending["expected_tool"],
+                        "selected_tools": [],
+                        "passed": None,
+                        "response": None,
+                        "detail": "No evaluado: cuota de Gemini agotada; solicitud omitida.",
+                    })
+                break
 
-    passed = sum(
-        1
-        for case in results
-        if case["passed"]
-    )
-
-    failed = len(results) - passed
-
-    compliance_pct = (
-        round((passed / len(results)) * 100, 2)
-        if results
-        else None
-    )
+    evaluated = [item for item in results if item["passed"] is not None]
+    passed = sum(item["passed"] is True for item in evaluated)
+    failed = sum(item["passed"] is False for item in evaluated)
+    not_evaluated = len(results) - len(evaluated)
+    compliance_pct = round(passed / len(evaluated) * 100, 2) if evaluated else None
 
     return {
         "analysis_id": str(request.analysis_id),
@@ -651,16 +657,17 @@ async def evaluate_agent_language(
         "modifies_inventory": False,
         "summary": {
             "total_cases": len(results),
+            "evaluated_cases": len(evaluated),
+            "not_evaluated": not_evaluated,
             "passed": passed,
             "failed": failed,
             "compliance_pct": compliance_pct,
         },
         "cases": results,
         "note": (
-            "Esta evaluación mide si Gemini interpreta consultas "
-            "predefinidas en lenguaje natural y selecciona la herramienta "
-            "controlada esperada. No evalúa el desempeño predictivo de "
-            "XGBoost y no modifica el inventario."
+            "Solo se calcula el cumplimiento sobre las respuestas efectivamente "
+            "evaluadas. Las solicitudes bloqueadas por Gemini no cuentan como fallos "
+            "de interpretación. No modifica el inventario."
         ),
     }
 
@@ -689,15 +696,27 @@ async def chat_with_agent(
 
         agent = get_inventory_agent()
 
-        response = agent.chat(
+        result = agent.chat(
             message=request.message,
             analysis_context=analysis_context,
+            history=[entry.model_dump() for entry in request.history],
+            return_trace=True,
         )
+
+        # Las herramientas registradas pertenecen a la ejecución actual;
+        # nunca se aceptan desde el cliente ni se infieren del historial.
+        if isinstance(result, dict):
+            answer = result.get("response") or "No se obtuvo una respuesta del agente."
+            used_tools = result.get("tool_trace") or []
+        else:
+            answer = str(result)
+            used_tools = []
 
         return AgentChatResponse(
             success=True,
             model=agent.model,
-            response=response,
+            response=answer,
+            tools_used=list(dict.fromkeys(used_tools)),
         )
 
     except HTTPException:

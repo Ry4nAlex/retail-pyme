@@ -16,7 +16,6 @@ Diseño aditivo: NO altera tablas existentes ni rompe los módulos actuales.
 import io
 import os
 import json
-import time
 import unicodedata
 from datetime import datetime, date
 from decimal import Decimal
@@ -30,11 +29,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
 from app.models.models import (
-    Product, Category, Sale, SaleItem, StockAnalysis,
+    Product, Category, Sale, SaleItem, StockAnalysis, DatasetUpload,
 )
 from app.core.security import require_admin
 from app.core.config import settings
-from app.services.cloud_metrics import probe_ml_availability, build_cloud_metrics
 
 router = APIRouter(prefix="/ingest", tags=["Carga unificada"])
 
@@ -272,16 +270,17 @@ async def ingest_all(
     if len(files) > 2:
         raise HTTPException(400, "Máximo 2 archivos (productos y ventas).")
 
-    t_start = time.perf_counter()
     cid = current_user["company_id"]
 
     # 1) Leer y clasificar archivos
     prod_df = None
     ventas_df = None
     nombres = []
+    total_bytes = 0
     for f in files:
         nombres.append(f.filename)
         content = await f.read()
+        total_bytes += len(content)
         if len(content) > settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024:
             raise HTTPException(413, f"'{f.filename}' supera {settings.MAX_UPLOAD_SIZE_MB}MB.")
         parsed = _read_file(content, f.filename)
@@ -299,6 +298,28 @@ async def ingest_all(
 
     ventas_std = _standardize_sales(ventas_df)
     catalog = _build_catalog(prod_df, ventas_std)
+
+    nombre_carga = " + ".join([x for x in nombres if x])[:255]
+
+    dataset_upload = DatasetUpload(
+        company_id=cid,
+        uploaded_by=current_user["user_id"],
+        filename=nombre_carga,
+        original_name=nombre_carga,
+        file_path="unified_ingest",
+        file_size=total_bytes,
+        rows_total=len(ventas_df),
+        rows_valid=len(ventas_std),
+        rows_invalid=max(len(ventas_df) - len(ventas_std), 0),
+        dataset_type="sales_history",
+        status="ready",
+        date_from=ventas_std["date"].min().date(),
+        date_to=ventas_std["date"].max().date(),
+        processed_at=datetime.utcnow(),
+    )
+
+    db.add(dataset_upload)
+    await db.flush()
 
     # 2) (Opcional) reemplazar la carga operativa anterior
     if replace_existing:
@@ -410,7 +431,9 @@ async def ingest_all(
         n += 1
         tax = (sub * TAX_RATE).quantize(Decimal("0.01"))
         sale = Sale(
-            company_id=cid, customer_id=None,
+            company_id=cid,
+            customer_id=None,
+            dataset_upload_id=dataset_upload.id,
             sale_number=f"S-{dia.year}{dia.month:02d}-{n:05d}",
             sale_date=datetime.combine(dia, datetime.min.time()),
             subtotal=sub, tax=tax, total=sub + tax,
@@ -437,7 +460,6 @@ async def ingest_all(
     ml_summary = None
     ml_error = None
     analysis_id = None
-    cloud = None
     if run_ml:
         current_stock = {sku: int(info["stock"]) for sku, info in catalog.items()}
         params = {
@@ -449,26 +471,9 @@ async def ingest_all(
             "run_ablation": run_ablation,
             "run_full_paper_experiment": run_full_paper_experiment,
         }
-        t_ml = time.perf_counter()
         out = await _ml_analyze(ventas_std, current_stock, params)
-        ml_roundtrip_ms = (time.perf_counter() - t_ml) * 1000
         if out and "_error" not in out:
             s = out.get("summary", {})
-            # ── Métricas operativas cloud ──
-            ml_timings = out.get("timings", {}) or {}
-            availability = await probe_ml_availability(settings.ML_SERVICE_URL, n=5)
-            backend_stages = [
-                {"stage": "Recepción + ETL ingestión", "ms": round((t_ml - t_start) * 1000, 1)},
-                {"stage": "Llamada al microservicio ML", "ms": round(ml_roundtrip_ms - (ml_timings.get("total_ml_ms") or 0), 1)},
-            ]
-            cloud = build_cloud_metrics(
-                records=ml_timings.get("records_in", len(ventas_std)),
-                total_ms=(time.perf_counter() - t_start) * 1000,
-                backend_stages=backend_stages,
-                ml_timings=ml_timings,
-                availability=availability,
-            )
-            out["cloud_metrics"] = cloud
             rec = StockAnalysis(
                 company_id=cid, created_by=current_user["user_id"], dataset_id=None,
                 source_filename=" + ".join([x for x in nombres if x]) or "carga_unificada",
@@ -499,6 +504,5 @@ async def ingest_all(
         "ml": ml_summary,
         "ml_error": ml_error,
         "analysis_id": analysis_id,
-        "cloud_metrics": cloud,
         "mensaje": "Carga completada. Revisa el Panel, Inventario, Ventas y Predicciones.",
     }

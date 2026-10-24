@@ -753,6 +753,14 @@ export default function StockAnalysisPage() {
     content: 'Hola. Puedo ayudarte a consultar el estado del inventario, predicciones de demanda y recomendaciones de reabastecimiento.'
   }
 ])
+  // Cada análisis debe tener su propio contexto conversacional.
+  useEffect(() => {
+    setAgentMessages([{
+      role: 'assistant',
+      content: 'Hola. Puedo ayudarte a consultar el estado del inventario, predicciones de demanda y recomendaciones de reabastecimiento.'
+    }])
+    setAgentMessage('')
+  }, [currentAnalysisId])
   const [filter, setFilter] = useState('todos')
 
   const loadAnalyses = () => mlService.listAnalyses().then((r) => setAnalyses(r.data)).catch(() => {})
@@ -1019,14 +1027,19 @@ const sendAgentMessage = async (customMessage = null) => {
   try {
     const response = await agentService.chat({
       message,
-      analysis_id: currentAnalysisId
+      analysis_id: currentAnalysisId,
+      history: agentMessages
+        .filter(item => item.role === 'user' || item.role === 'assistant')
+        .slice(-10)
+        .map(({ role, content }) => ({ role, content: String(content).slice(0, 1500) }))
     })
 
     setAgentMessages(prev => [
       ...prev,
       {
         role: 'assistant',
-        content: response.data.response
+        content: response.data.response,
+        toolsUsed: Array.isArray(response.data.tools_used) ? response.data.tools_used : []
       }
     ])
   } catch (error) {
@@ -1311,6 +1324,11 @@ módulo Evaluación experimental.
                     }
                   >
                     <div className="whitespace-pre-wrap">{msg.content}</div>
+                    {msg.role === 'assistant' && Array.isArray(msg.toolsUsed) && msg.toolsUsed.length > 0 && (
+                      <div className="mt-2 border-t border-gray-200 pt-2 text-[11px] text-gray-500">
+                        Datos consultados: {msg.toolsUsed.map(name => name.replaceAll('_', ' ')).join(', ')}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
