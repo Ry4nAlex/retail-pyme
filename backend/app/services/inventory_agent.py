@@ -713,20 +713,27 @@ class InventoryAgent:
 
         declarations = []
         for name, description in descriptions.items():
+            # En la version del SDK instalada en Railway, FunctionDeclaration
+            # utiliza `parameters` (types.Schema), no `parameters_json_schema`.
+            # Para funciones sin argumentos se omite el esquema.
             if name == "recomendar_reabastecimiento":
-                schema = {
-                    "type": "object",
-                    "properties": {"product_name": {"type": "string"}},
-                    "required": ["product_name"],
-                }
+                declaration = types.FunctionDeclaration(
+                    name=name,
+                    description=description,
+                    parameters=types.Schema(
+                        type=types.Type.OBJECT,
+                        properties={
+                            "product_name": types.Schema(type=types.Type.STRING),
+                        },
+                        required=["product_name"],
+                    ),
+                )
             else:
-                schema = {"type": "object", "properties": {}}
-
-            declarations.append(types.FunctionDeclaration(
-                name=name,
-                description=description,
-                parameters_json_schema=schema,
-            ))
+                declaration = types.FunctionDeclaration(
+                    name=name,
+                    description=description,
+                )
+            declarations.append(declaration)
 
         response = self._generate_with_retry(
             contents=question,
