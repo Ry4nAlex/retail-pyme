@@ -630,7 +630,11 @@ async def evaluate_agent_language(
                 "detail": f"No evaluado: {reason}",
             })
             # Si se agotó la cuota, no gastar más solicitudes.
-            if "límite de consultas" in reason:
+            if (
+                "límite de consultas" in reason
+                or "no está disponible temporalmente" in reason
+                or "No se pudo completar la consulta" in reason
+            ):
                 for pending in cases[index + 1:]:
                     results.append({
                         "id": pending["id"],
@@ -640,7 +644,7 @@ async def evaluate_agent_language(
                         "selected_tools": [],
                         "passed": None,
                         "response": None,
-                        "detail": "No evaluado: cuota de Gemini agotada; solicitud omitida.",
+                        "detail": "No evaluado: servicio de Gemini no disponible; solicitud omitida para evitar reintentos.",
                     })
                 break
 

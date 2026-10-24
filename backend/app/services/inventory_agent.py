@@ -57,7 +57,13 @@ class InventoryAgent:
                 "No se encontró GEMINI_API_KEY en las variables de entorno."
             )
 
-        self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        self.client = genai.Client(
+            api_key=settings.GEMINI_API_KEY,
+            http_options=types.HttpOptions(
+                timeout=20000,  # Milisegundos: impedir esperas largas en Railway.
+                retry_options=types.HttpRetryOptions(attempts=1),
+            ),
+        )
         return self.client
 
     def _generate_with_retry(
@@ -737,6 +743,7 @@ class InventoryAgent:
 
         response = self._generate_with_retry(
             contents=question,
+            max_attempts=1,  # La evaluacion no repite llamadas 503/429.
             config=types.GenerateContentConfig(
                 system_instruction=(
                     "Selecciona la herramienta adecuada para la solicitud "
