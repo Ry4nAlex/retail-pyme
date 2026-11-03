@@ -1,4 +1,5 @@
 import json
+import logging
 import time
 from typing import Optional
 
@@ -127,6 +128,11 @@ class InventoryAgent:
                         "Inténtalo nuevamente en unos minutos."
                     ) from exc
 
+                logging.getLogger(__name__).exception(
+                    "Error real en Gemini (modelo=%s; tipo=%s)",
+                    self.model,
+                    type(exc).__name__,
+                )
                 raise RuntimeError(
                     "No se pudo completar la consulta con el servicio de IA."
                 ) from exc
