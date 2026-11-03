@@ -899,8 +899,8 @@ class InventoryAgent:
             )
 
         def priorizar_reabastecimiento(
-            limit: int = 5,
-        ) -> list:
+    limit: int,
+) -> list:
             """
             Lista los productos con bajo stock ordenados por prioridad.
 
