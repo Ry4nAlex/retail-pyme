@@ -59,12 +59,11 @@ class InventoryAgent:
             )
 
         self.client = genai.Client(
-            api_key=settings.GEMINI_API_KEY,
-            http_options=types.HttpOptions(
-                timeout=20000,  # Milisegundos: impedir esperas largas en Railway.
-                retry_options=types.HttpRetryOptions(attempts=1),
-            ),
-        )
+    api_key=settings.GEMINI_API_KEY,
+    http_options=types.HttpOptions(
+        timeout=20000,
+    ),
+)
         return self.client
 
     def _generate_with_retry(
