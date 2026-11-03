@@ -61,7 +61,7 @@ class InventoryAgent:
         self.client = genai.Client(
     api_key=settings.GEMINI_API_KEY,
     http_options=types.HttpOptions(
-        timeout=20000,
+        timeout=60000,
     ),
 )
         return self.client
