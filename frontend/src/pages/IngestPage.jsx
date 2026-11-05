@@ -8,6 +8,8 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
+const ALLOWED_EXTENSIONS = ['.csv', '.xlsx', '.xls']
+
 const money = (v) => `S/ ${Number(v || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 function ResultStat({ icon: Icon, label, value, sub, color }) {
@@ -987,6 +989,7 @@ export default function IngestPage({ embedded = false }) {
   const [runFullPaperExperiment, setRunFullPaperExperiment] = useState(false)
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
+  const [uploadError, setUploadError] = useState('')
   const [mlOnline, setMlOnline] = useState(null)
   const fileRef = useRef()
 
@@ -996,13 +999,35 @@ export default function IngestPage({ embedded = false }) {
 
   const addFiles = (list) => {
     const incoming = Array.from(list || [])
-    setFiles((prev) => [...prev, ...incoming].slice(0, 2))
     if (fileRef.current) fileRef.current.value = ''
+    if (!incoming.length) return
+
+    const invalid = incoming.find((file) =>
+      !ALLOWED_EXTENSIONS.some((ext) => file.name.toLowerCase().endsWith(ext))
+    )
+    if (invalid) {
+      const message = `Formato de archivo no permitido: "${invalid.name}". Solo se aceptan archivos CSV, XLS o XLSX.`
+      setUploadError(message)
+      toast.error(message)
+      return
+    }
+    if (files.length + incoming.length > 2) {
+      const message = 'Solo puedes subir hasta 2 archivos (Ventas y Productos).'
+      setUploadError(message)
+      toast.error(message)
+      return
+    }
+    setUploadError('')
+    setFiles((prev) => [...prev, ...incoming])
   }
-  const removeFile = (i) => setFiles((prev) => prev.filter((_, idx) => idx !== i))
+  const removeFile = (i) => {
+    setFiles((prev) => prev.filter((_, idx) => idx !== i))
+    setUploadError('')
+  }
 
   const handleIngest = async () => {
     if (files.length === 0) { toast.error('Selecciona al menos un archivo'); return }
+    setUploadError('')
     const fd = new FormData()
     files.forEach((f) => fd.append('files', f))
     fd.append('horizon_months', horizon)
@@ -1022,7 +1047,12 @@ export default function IngestPage({ embedded = false }) {
       toast.success('Carga completada')
       if (r.data.ml_error) toast('ML omitido: ' + r.data.ml_error, { icon: '⚠️' })
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'No se pudo procesar la carga')
+      const detail = e.response?.data?.detail
+      const message = typeof detail === 'string'
+        ? detail
+        : 'No se pudo procesar la carga. Verifica tu conexión e inténtalo nuevamente.'
+      setUploadError(message)
+      toast.error(message)
     } finally {
       setLoading(false)
     }
@@ -1080,6 +1110,13 @@ export default function IngestPage({ embedded = false }) {
           <p className="text-xs text-slate-400 mt-1">Un libro con hojas Productos + Ventas, o dos archivos por separado · Máx. 50 MB c/u</p>
           <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" multiple className="hidden" onChange={(e) => addFiles(e.target.files)} />
         </div>
+
+        {uploadError && (
+          <div role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+            <span>{uploadError}</span>
+          </div>
+        )}
 
         {files.length > 0 && (
           <div className="mt-4 space-y-2">

@@ -17,6 +17,7 @@ import io
 import os
 import json
 import unicodedata
+from zipfile import BadZipFile
 from datetime import datetime, date
 from decimal import Decimal
 
@@ -103,37 +104,50 @@ def _looks_like(df: pd.DataFrame, aliases: dict, required: list) -> bool:
 
 
 def _read_file(content: bytes, filename: str):
-    """Devuelve dict con posibles dataframes {'productos': df|None, 'ventas': df|None}."""
+    """Devuelve {'productos': df|None, 'ventas': df|None} con errores claros de lectura."""
     ext = os.path.splitext(filename or "")[1].lower()
     if ext not in ALLOWED:
-        raise HTTPException(400, f"'{filename}': tipo no permitido. Use CSV, XLSX o XLS.")
+        raise HTTPException(
+            400,
+            f"Formato de archivo no permitido: '{filename}'. Solo se aceptan archivos CSV, XLS o XLSX.",
+        )
+    if not content:
+        raise HTTPException(400, f"No se pudo leer '{filename}': el archivo está vacío.")
 
     out = {"productos": None, "ventas": None}
-    if ext == ".csv":
-        df = pd.read_csv(io.BytesIO(content))
-        _classify_single(df, out)
-        return out
+    try:
+        if ext == ".csv":
+            df = pd.read_csv(io.BytesIO(content))
+            _classify_single(df, out)
+            return out
 
-    # Excel: puede traer varias hojas (p. ej. "Productos" y "Ventas")
-    xls = pd.ExcelFile(io.BytesIO(content))
-    if len(xls.sheet_names) == 1:
-        _classify_single(pd.read_excel(xls, sheet_name=0), out)
-        return out
+        # Excel: un archivo puede contener varias hojas, incluso Productos + Ventas.
+        xls = pd.ExcelFile(io.BytesIO(content))
+        if len(xls.sheet_names) == 1:
+            _classify_single(pd.read_excel(xls, sheet_name=0), out)
+            return out
 
-    for sheet in xls.sheet_names:
-        s = _norm(sheet)
-        df = pd.read_excel(xls, sheet_name=sheet)
-        if df.empty:
-            continue
-        if s in ("productos", "products", "catalogo", "inventario") or \
-           (_looks_like(df, PROD_ALIASES, ["sku", "name"]) and not _looks_like(df, SALE_ALIASES, ["date", "quantity"])):
-            out["productos"] = df
-        elif s in ("ventas", "sales", "historial") or _looks_like(df, SALE_ALIASES, ["date", "quantity"]):
-            out["ventas"] = df
-    # Fallback: si solo se reconoció una, intenta clasificar la primera hoja
-    if out["productos"] is None and out["ventas"] is None:
-        _classify_single(pd.read_excel(xls, sheet_name=0), out)
-    return out
+        for sheet in xls.sheet_names:
+            s = _norm(sheet)
+            df = pd.read_excel(xls, sheet_name=sheet)
+            if df.empty:
+                continue
+            if s in ("productos", "products", "catalogo", "inventario") or \
+               (_looks_like(df, PROD_ALIASES, ["sku", "name"]) and not _looks_like(df, SALE_ALIASES, ["date", "quantity"])):
+                out["productos"] = df
+            elif s in ("ventas", "sales", "historial") or _looks_like(df, SALE_ALIASES, ["date", "quantity"]):
+                out["ventas"] = df
+        if out["productos"] is None and out["ventas"] is None:
+            _classify_single(pd.read_excel(xls, sheet_name=0), out)
+        return out
+    except HTTPException:
+        raise
+    except (ValueError, OSError, UnicodeError, BadZipFile, pd.errors.ParserError, pd.errors.EmptyDataError):
+        raise HTTPException(
+            400,
+            f"No se pudo leer el archivo '{filename}'. Verifica que sea un CSV o Excel válido, "
+            "que no esté dañado y vuelve a intentarlo.",
+        ) from None
 
 
 def _classify_single(df: pd.DataFrame, out: dict):
@@ -200,7 +214,11 @@ def _standardize_sales(ventas_df: pd.DataFrame) -> pd.DataFrame:
     c = _resolve(ventas_df, SALE_ALIASES)
     for r in ("date", "sku", "quantity"):
         if r not in c:
-            raise HTTPException(400, "La hoja de ventas necesita columnas: fecha, producto/sku y cantidad.")
+            raise HTTPException(
+                400,
+                "Estructura de archivo incorrecta. La hoja de ventas debe incluir las columnas "
+                "fecha, sku (o código de producto) y cantidad. Revisa la plantilla de Ventas.",
+            )
     d = pd.DataFrame()
     d["date"] = pd.to_datetime(ventas_df[c["date"]], errors="coerce")
     d["sku"] = ventas_df[c["sku"]].astype(str).str.strip()
@@ -211,7 +229,7 @@ def _standardize_sales(ventas_df: pd.DataFrame) -> pd.DataFrame:
     d = d.dropna(subset=["date", "quantity"])
     d = d[d["quantity"] > 0]
     if d.empty:
-        raise HTTPException(400, "No hay filas de ventas válidas tras la limpieza (revisa fecha/cantidad).")
+        raise HTTPException(400, "Estructura de ventas incorrecta: no hay filas con fecha válida y cantidad mayor a cero. Revisa la plantilla de Ventas.")
     return d
 
 
@@ -292,8 +310,9 @@ async def ingest_all(
     if ventas_df is None:
         raise HTTPException(
             400,
-            "No se encontró una hoja/archivo de VENTAS (necesita columnas fecha, producto y cantidad). "
-            "Las ventas son obligatorias; los productos son opcionales.",
+            "Estructura de archivo incorrecta. No se encontró una hoja o archivo de Ventas "
+            "con las columnas requeridas: fecha, sku (o código de producto) y cantidad. "
+            "Revisa la plantilla de Ventas; la plantilla de Productos es opcional.",
         )
 
     ventas_std = _standardize_sales(ventas_df)
