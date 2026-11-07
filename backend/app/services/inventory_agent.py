@@ -999,22 +999,76 @@ No realices compras ni modificaciones en el inventario.
 La decisión final corresponde al usuario.
 """
 
-        response = self._generate_with_retry(
-            contents=prompt,
-            config=types.GenerateContentConfig(
-    system_instruction=SYSTEM_INSTRUCTION,
-    temperature=0.2,
-    tools=tools,
-),
+        # Gestionamos las herramientas manualmente para conservar intactas
+        # las firmas de pensamiento que Gemini incluye en sus llamadas.
+        # Es obligatorio reenviar el Content original del modelo, no crear
+        # otro Part.from_function_call sin su thought_signature.
+        available_tools = {fn.__name__: fn for fn in tools}
+        conversation = [
+            types.Content(role="user", parts=[types.Part.from_text(text=prompt)])
+        ]
+        config = types.GenerateContentConfig(
+            system_instruction=SYSTEM_INSTRUCTION,
+            temperature=0.2,
+            tools=tools,
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(
+                disable=True,
+            ),
         )
 
-        if return_trace:
-            return {
-                "response": response.text,
-                "tool_trace": tool_trace,
-            }
+        for _ in range(5):
+            response = self._generate_with_retry(
+                contents=conversation,
+                config=config,
+            )
+            candidate = response.candidates[0] if response.candidates else None
+            model_content = candidate.content if candidate else None
+            if model_content is None:
+                raise RuntimeError(
+                    "Gemini no devolvió contenido para procesar la consulta."
+                )
 
-        return response.text
+            # Preservar el objeto original mantiene los thought_signature
+            # y el orden de todas las partes, incluso en llamadas paralelas.
+            calls = [
+                part.function_call
+                for part in (model_content.parts or [])
+                if part.function_call is not None
+            ]
+            if not calls:
+                text = response.text or "No se obtuvo una respuesta del agente."
+                if return_trace:
+                    return {"response": text, "tool_trace": tool_trace}
+                return text
+
+            conversation.append(model_content)
+            results = []
+            for call in calls:
+                fn = available_tools.get(call.name)
+                if fn is None:
+                    payload = {"error": f"Herramienta desconocida: {call.name}"}
+                else:
+                    try:
+                        payload = fn(**dict(call.args or {}))
+                    except (TypeError, ValueError) as exc:
+                        payload = {"error": f"Argumentos inválidos: {exc}"}
+
+                # Solo enviamos resultados JSON seguros, sin perder datos
+                # de inventario que puedan necesitarse para la respuesta.
+                safe_payload = json.loads(json.dumps(payload, default=str))
+                results.append(
+                    types.Part.from_function_response(
+                        name=call.name,
+                        response={"result": safe_payload},
+                    )
+                )
+
+            # Todas las respuestas a funciones del mismo turno van juntas.
+            conversation.append(types.Content(role="tool", parts=results))
+
+        raise RuntimeError(
+            "El agente alcanzó el límite de pasos al consultar herramientas."
+        )
 
 
 def get_inventory_agent() -> InventoryAgent:
