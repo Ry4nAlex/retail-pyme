@@ -132,7 +132,11 @@ function ProductRow({ p, onAgentAction }) {
             <span className="w-2 h-2 rounded-full" style={{ background: st.dot }} />
             <div>
               <p className="font-medium text-slate-800 text-sm">{p.product_name}</p>
-              <p className="text-xs text-slate-400">{p.category}</p>
+              <p className="text-xs text-slate-400">
+                {p.product_id ? `Código: ${p.product_id} · ` : ''}
+                {p.category}
+              </p>
+
             </div>
           </div>
         </td>
@@ -191,6 +195,9 @@ function ProductRow({ p, onAgentAction }) {
                   <div className="rounded-xl bg-white border border-slate-200 p-3">
                     <p className="text-xs text-slate-400">Se agota aprox.</p>
                     <p className="font-semibold text-slate-700">{p.depletion_date}</p>
+                    <p className="text-xs text-amber-700 mt-1">
+                      Proyección del análisis guardado, no actualizada en tiempo real.
+                    </p>
                   </div>
                   <div className="rounded-xl bg-white border border-slate-200 p-3">
                     <p className="text-xs text-slate-400">Demanda {p.horizon_months}m</p>

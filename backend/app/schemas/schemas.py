@@ -277,6 +277,7 @@ class DatasetUploadResponse(BaseModel):
 
 # ─── ML: TRAINING JOB ───
 class TrainingJobCreate(BaseModel):
+    model_config = {"protected_namespaces": ()}
     dataset_id: UUID
     model_type: str = "xgboost"
     parameters: dict = {}
@@ -295,6 +296,7 @@ class TrainingJobResponse(BaseModel):
     created_at: datetime
     class Config:
         from_attributes = True
+        protected_namespaces = ()
 
 
 # ─── ML: PREDICTIONS ───
