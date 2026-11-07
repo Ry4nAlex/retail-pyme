@@ -1064,7 +1064,7 @@ La decisión final corresponde al usuario.
                 )
 
             # Todas las respuestas a funciones del mismo turno van juntas.
-            conversation.append(types.Content(role="tool", parts=results))
+            conversation.append(types.Content(role="user", parts=results))
 
         raise RuntimeError(
             "El agente alcanzó el límite de pasos al consultar herramientas."
