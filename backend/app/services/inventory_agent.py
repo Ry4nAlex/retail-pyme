@@ -265,7 +265,7 @@ class InventoryAgent:
                 product.get("product_id")
                 or product.get("sku")
                 or ""
-            )
+            ).strip().lower()
 
             #Coincidencia exacta pro nombre o SKU
             if search_name == current_name or search_name == current_sku:
@@ -1048,7 +1048,7 @@ La decisión final corresponde al usuario.
         declarations = []
 
         for fn in tools:
-            params = tool_parameters.get(fn._name_,{})
+            params = tool_parameters.get(fn.__name__, {})
 
             kwargs = {}
 
