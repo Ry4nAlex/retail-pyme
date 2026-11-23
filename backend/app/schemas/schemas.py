@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, field_validator, Field, model_validator
+from pydantic import BaseModel, EmailStr, field_validator, Field
 from typing import Optional, List, Any
 from datetime import datetime, date
 from uuid import UUID
@@ -149,14 +149,6 @@ class ProductCreate(BaseModel):
     unit: str = "unit"
     category_id: Optional[UUID] = None
 
-    @model_validator(mode="after")
-    def validate_stock_limits(self):
-        if self.max_stock > 0 and self.max_stock < self.min_stock:
-            raise ValueError(
-                "El stock máximo no puede ser menor que el mínimo"
-            )
-        return self
-
 class ProductUpdate(BaseModel):
     sku: Optional[str] = None
     name: Optional[str] = None
@@ -170,13 +162,28 @@ class ProductUpdate(BaseModel):
     category_id: Optional[UUID] = None
     active: Optional[bool] = None
 
-class ProductResponse(ProductCreate):
+class ProductResponse(BaseModel):
     id: UUID
     company_id: UUID
+
+    sku: str
+    name: str
+    description: Optional[str] = None
+
+    unit_cost: Decimal
+    unit_price: Decimal
+    stock: int
+    min_stock: int
+    max_stock: int
+
+    unit: str
+    category_id: Optional[UUID] = None
+
     active: bool
     created_at: datetime
     updated_at: datetime
     category: Optional[CategoryResponse] = None
+
     class Config:
         from_attributes = True
 
