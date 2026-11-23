@@ -167,6 +167,33 @@ export function ProductsPage() {
     setModal(true);
   };
   const save = async () => {
+    const camposNumericos = [
+      ["unit_cost", "Costo unitario"],
+      ["unit_price", "Precio unitario"],
+      ["stock", "Stock actual"],
+      ["min_stock", "Stock mínimo"],
+      ["max_stock", "Stock máximo"],
+    ];
+
+    for (const [campo, nombre] of camposNumericos) {
+      const valor = form[campo];
+      if (valor === "" || valor === null || valor === undefined || !Number.isFinite(Number(valor))) {
+        toast.error(`${nombre} debe ser un número válido`);
+        return;
+      }
+      if (Number(valor) < 0) {
+        toast.error(`${nombre} no puede ser negativo`);
+        return;
+      }
+    }
+
+    for (const campo of ["stock", "min_stock", "max_stock"]) {
+      if (!Number.isInteger(Number(form[campo]))) {
+        toast.error("Las cantidades de stock deben ser números enteros");
+        return;
+      }
+    }
+
     setSaving(true);
     try {
       const d = { ...form, category_id: form.category_id || null };
@@ -177,7 +204,8 @@ export function ProductsPage() {
       setModal(false);
       load();
     } catch (e) {
-      toast.error(e.response?.data?.detail || "Error");
+      const detalle = e.response?.data?.detail;
+      toast.error(typeof detalle === "string" ? detalle : "No se pudo guardar el producto. Revisa los datos.");
     } finally {
       setSaving(false);
     }
@@ -369,6 +397,7 @@ export function ProductsPage() {
               <label className="field-label">Costo unitario</label>
               <input
                 type="number"
+                min="0"
                 step="0.01"
                 className="field-input"
                 value={form.unit_cost}
@@ -379,6 +408,7 @@ export function ProductsPage() {
               <label className="field-label">Precio unitario</label>
               <input
                 type="number"
+                min="0"
                 step="0.01"
                 className="field-input"
                 value={form.unit_price}
@@ -391,27 +421,33 @@ export function ProductsPage() {
               <label className="field-label">Stock actual</label>
               <input
                 type="number"
+                min="0"
+                step="1"
                 className="field-input"
                 value={form.stock}
-                onChange={(e) => F("stock", +e.target.value)}
+                onChange={(e) => F("stock", e.target.value)}
               />
             </div>
             <div>
               <label className="field-label">Stock mínimo</label>
               <input
                 type="number"
+                min="0"
+                step="1"
                 className="field-input"
                 value={form.min_stock}
-                onChange={(e) => F("min_stock", +e.target.value)}
+                onChange={(e) => F("min_stock", e.target.value)}
               />
             </div>
             <div>
               <label className="field-label">Stock máximo</label>
               <input
                 type="number"
+                min="0"
+                step="1"
                 className="field-input"
                 value={form.max_stock}
-                onChange={(e) => F("max_stock", +e.target.value)}
+                onChange={(e) => F("max_stock", e.target.value)}
               />
             </div>
           </div>

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, field_validator, Field, model_validator
 from typing import Optional, List, Any
 from datetime import datetime, date
 from uuid import UUID
@@ -141,23 +141,31 @@ class ProductCreate(BaseModel):
     sku: str
     name: str
     description: Optional[str] = None
-    unit_cost: Decimal = Decimal("0")
-    unit_price: Decimal = Decimal("0")
-    stock: int = 0
-    min_stock: int = 0
-    max_stock: int = 0
+    unit_cost: Decimal = Field(default=Decimal("0"), ge=0)
+    unit_price: Decimal = Field(default=Decimal("0"), ge=0)
+    stock: int = Field(default=0, ge=0)
+    min_stock: int = Field(default=0, ge=0)
+    max_stock: int = Field(default=0, ge=0)
     unit: str = "unit"
     category_id: Optional[UUID] = None
+
+    @model_validator(mode="after")
+    def validate_stock_limits(self):
+        if self.max_stock > 0 and self.max_stock < self.min_stock:
+            raise ValueError(
+                "El stock máximo no puede ser menor que el mínimo"
+            )
+        return self
 
 class ProductUpdate(BaseModel):
     sku: Optional[str] = None
     name: Optional[str] = None
     description: Optional[str] = None
-    unit_cost: Optional[Decimal] = None
-    unit_price: Optional[Decimal] = None
-    stock: Optional[int] = None
-    min_stock: Optional[int] = None
-    max_stock: Optional[int] = None
+    unit_cost: Optional[Decimal] = Field(default=None, ge=0)
+    unit_price: Optional[Decimal] = Field(default=None, ge=0)
+    stock: Optional[int] = Field(default=None, ge=0)
+    min_stock: Optional[int] = Field(default=None, ge=0)
+    max_stock: Optional[int] = Field(default=None, ge=0)
     unit: Optional[str] = None
     category_id: Optional[UUID] = None
     active: Optional[bool] = None
