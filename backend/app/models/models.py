@@ -280,3 +280,68 @@ class StockAnalysis(Base):
     metrics         = Column(JSONB, default={})
     result          = Column(JSONB, default={})   # análisis completo (summary, products, etc.)
     created_at      = Column(DateTime, default=datetime.utcnow)
+
+
+class ReplenishmentFollowup(Base):
+    __tablename__ = "replenishment_followups"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4
+    )
+
+    company_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.id"),
+        nullable=False
+    )
+
+    analysis_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("stock_analyses.id"),
+        nullable=False
+    )
+
+    product_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("products.id"),
+        nullable=False
+    )
+
+    recommended_units = Column(Integer, nullable=False)
+    planned_units = Column(Integer, nullable=False)
+    received_units = Column(Integer, default=0, nullable=False)
+
+    status = Column(String(20), default="pendiente", nullable=False)
+    notes = Column(Text)
+
+    created_by = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=False
+    )
+
+    confirmed_by = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=True
+    )
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )
+    received_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "company_id",
+            "analysis_id",
+            "product_id",
+            name="uq_followup_analysis_product"
+        ),
+    )
+

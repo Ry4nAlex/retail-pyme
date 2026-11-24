@@ -402,3 +402,36 @@ class StockAnalysisListItem(BaseModel):
     created_at: datetime
     class Config:
         from_attributes = True
+
+
+# ─── SEGUIMIENTO DE REABASTECIMIENTO ───
+
+class ReplenishmentCreate(BaseModel):
+    analysis_id: UUID
+    product_id: UUID
+    planned_units: int = Field(gt=0)
+    notes: Optional[str] = None
+
+
+class ReplenishmentResponse(BaseModel):
+    id: UUID
+    company_id: UUID
+    analysis_id: UUID
+    product_id: UUID
+
+    recommended_units: int
+    planned_units: int
+    received_units: int
+
+    status: str
+    notes: Optional[str] = None
+
+    created_by: UUID
+    confirmed_by: Optional[UUID] = None
+
+    created_at: datetime
+    updated_at: datetime
+    received_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
