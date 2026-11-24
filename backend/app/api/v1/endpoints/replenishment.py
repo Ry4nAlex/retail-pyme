@@ -17,6 +17,11 @@ from app.schemas.schemas import (
     ReplenishmentCreate,
     ReplenishmentResponse,
 )
+from app.schemas.schemas import (
+    ReplenishmentCreate,
+    ReplenishmentResponse,
+    ReplenishmentStatusUpdate,
+)
 
 router = APIRouter(
     prefix="/replenishments",
@@ -170,5 +175,56 @@ async def get_followup(
 
     if not followup:
         raise HTTPException(404, "Seguimiento no encontrado")
+
+    return followup
+
+
+@router.patch(
+    "/{followup_id}/status",
+    response_model=ReplenishmentResponse,
+)
+async def update_followup_status(
+    followup_id: UUID,
+    data: ReplenishmentStatusUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    followup = await db.scalar(
+        select(ReplenishmentFollowup)
+        .where(
+            ReplenishmentFollowup.id == followup_id,
+            ReplenishmentFollowup.company_id == user["company_id"],
+        )
+        .with_for_update()
+    )
+
+    if not followup:
+        raise HTTPException(
+            status_code=404,
+            detail="Seguimiento no encontrado",
+        )
+
+    allowed_transitions = {
+        "pendiente": {"pospuesto", "descartado"},
+        "pospuesto": {"pendiente", "descartado"},
+        "descartado": set(),
+        "recibido": set(),
+    }
+
+    allowed = allowed_transitions.get(followup.status, set())
+
+    if data.status not in allowed:
+        raise HTTPException(
+            status_code=409,
+            detail="No se permite esta transición de estado",
+        )
+
+    followup.status = data.status
+
+    if data.notes is not None:
+        followup.notes = data.notes
+
+    await db.flush()
+    await db.refresh(followup)
 
     return followup

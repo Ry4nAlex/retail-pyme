@@ -3,7 +3,7 @@ from typing import Optional, List, Any
 from datetime import datetime, date
 from uuid import UUID
 from decimal import Decimal
-
+from typing import Literal
 
 # ─── AUTH ───
 class LoginRequest(BaseModel):
@@ -435,3 +435,7 @@ class ReplenishmentResponse(BaseModel):
 
     model_config = {"from_attributes": True}
 
+
+class ReplenishmentStatusUpdate(BaseModel):
+    status: Literal["pendiente", "pospuesto", "descartado"]
+    notes: Optional[str] = None
