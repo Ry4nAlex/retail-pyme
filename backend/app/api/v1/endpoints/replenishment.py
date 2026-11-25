@@ -1,29 +1,15 @@
 
+from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_current_user
 from app.db.database import get_db
-from app.models.models import (
-    Product,
-    StockAnalysis,
-    ReplenishmentFollowup,
-)
-from app.schemas.schemas import (
-    ReplenishmentCreate,
-    ReplenishmentResponse,
-)
-from app.schemas.schemas import (
-    ReplenishmentCreate,
-    ReplenishmentResponse,
-    ReplenishmentStatusUpdate,
-)
-
-from datetime import datetime
 
 from app.models.models import (
     Product,
@@ -38,6 +24,11 @@ from app.schemas.schemas import (
     ReplenishmentStatusUpdate,
     ReplenishmentReceive,
 )
+
+from app.services.replenishment_tracking_agent import (
+    get_replenishment_tracking_agent,
+)
+
 
 router = APIRouter(
     prefix="/replenishments",
@@ -359,3 +350,42 @@ async def confirm_replenishment_receipt(
     await db.refresh(followup)
 
     return followup
+
+
+# Chat del Agente 2: Seguimiento de reabastecimiento
+
+class ReplenishmentChatRequest(BaseModel):
+    message: str = Field(
+        ...,
+        min_length=1,
+        max_length=1000,
+    )
+
+
+@router.post("/chat")
+async def chat_with_tracking_agent(
+    request: ReplenishmentChatRequest,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    agent = get_replenishment_tracking_agent()
+
+    try:
+        return await agent.chat(
+            message=request.message,
+            db=db,
+            company_id=user["company_id"],
+        )
+
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc),
+        )
+
+    except Exception:
+        raise HTTPException(
+            status_code=502,
+            detail="No se pudo completar la consulta con Gemini.",
+        )
+
