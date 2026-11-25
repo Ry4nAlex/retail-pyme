@@ -100,6 +100,10 @@ export default function MultiAgentPage() {
         message: question,
         agent,
         analysis_id: analysisId || null,
+        history: messages.slice(-10).map(item => ({
+          role: item.role,
+          content: item.text.slice(0, 1500),
+        })),
       });
 
       setMessages(prev => [
