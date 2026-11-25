@@ -1,6 +1,7 @@
 
 import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import { Link, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 
 import {
@@ -49,13 +50,21 @@ function getAnalysisLabel(analysis) {
 
 
 export default function MultiAgentPage() {
+  const [searchParams] = useSearchParams();
+  const incomingAnalysisId = searchParams.get("analysis_id") || "";
+  const incomingSku = searchParams.get("sku") || "";
+  const incomingIntent = searchParams.get("intent") || "";
   const [analyses, setAnalyses] = useState([]);
   const [analysisId, setAnalysisId] = useState("");
   const [followups, setFollowups] = useState([]);
   const [followupId, setFollowupId] = useState("");
 
   const [agent, setAgent] = useState("automatico");
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState(
+    incomingSku && incomingIntent === "consultar"
+      ? `Explica las recomendaciones del análisis para el SKU ${incomingSku}, distinguiendo el pronóstico histórico del stock vigente.`
+      : ""
+  );
   const [messages, setMessages] = useState([]);
 
   const [actionMessage, setActionMessage] = useState("");
@@ -63,7 +72,7 @@ export default function MultiAgentPage() {
   const [loading, setLoading] = useState(false);
 
   // Selección de cualquier producto del catálogo, sin obligar a entrenar XGBoost.
-  const [catalogSearch, setCatalogSearch] = useState("");
+  const [catalogSearch, setCatalogSearch] = useState(incomingSku);
   const [catalogMatches, setCatalogMatches] = useState([]);
   const [selectedCatalogId, setSelectedCatalogId] = useState("");
   const [stockRule, setStockRule] = useState(null);
@@ -73,7 +82,7 @@ export default function MultiAgentPage() {
   // Los medicamentos se crean desde el módulo Productos existente.
   // Esta sección solo registra seguimientos recomendados por un análisis real.
   const [recommendedProducts, setRecommendedProducts] = useState([]);
-  const [recommendationSku, setRecommendationSku] = useState("");
+  const [recommendationSku, setRecommendationSku] = useState(incomingSku);
   const [plannedUnits, setPlannedUnits] = useState("");
   const [recommendationLoading, setRecommendationLoading] = useState(false);
   const [selectedFollowupData, setSelectedFollowupData] = useState(null);
@@ -151,7 +160,7 @@ export default function MultiAgentPage() {
       await loadFollowups();
       setFollowupId(data.id);
       setPreview(null);
-      toast.success("Seguimiento pendiente registrado. Continúa con el agente 2.");
+      toast.success("Seguimiento pendiente registrado. Continúa con el paso 4.");
     } catch (error) {
       const detail = error.response?.data?.detail;
       toast.error(typeof detail === "string" ? detail : "No se pudo registrar el seguimiento");
@@ -174,9 +183,17 @@ export default function MultiAgentPage() {
         if (!active) return;
         const products = Array.isArray(data?.result?.products)
           ? data.result.products : [];
-        setRecommendedProducts(products.filter(p =>
+        const eligible = products.filter(p =>
           Number(p.understock_units) > 0 && p.product_id
-        ));
+        );
+        setRecommendedProducts(eligible);
+        if (incomingSku) {
+          const matched = eligible.find(p => String(p.product_id).toLowerCase() === incomingSku.toLowerCase());
+          if (matched) {
+            setRecommendationSku(String(matched.product_id));
+            setPlannedUnits(String(Math.max(1, Math.round(Number(matched.understock_units)))));
+          }
+        }
       })
       .catch(() => {
         if (active) toast.error("No se pudieron consultar las recomendaciones del análisis");
@@ -185,7 +202,7 @@ export default function MultiAgentPage() {
         if (active) setRecommendationLoading(false);
       });
     return () => { active = false; };
-  }, [analysisId]);
+  }, [analysisId, incomingSku]);
 
   // Mostrar stock actualizado desde el catálogo, no desde un análisis histórico.
   useEffect(() => {
@@ -233,6 +250,16 @@ export default function MultiAgentPage() {
         toast.error("Ese SKU no existe en Productos. Regístralo primero en el módulo Productos.");
         return;
       }
+      const { data: live } = await productsService.get(product.id);
+      const liveStock = Number(live?.stock ?? product.stock ?? 0);
+      const analysisStock = Number(recommendation.current_stock);
+      const note = Number.isFinite(analysisStock) && liveStock !== analysisStock
+        ? `El análisis tenía ${analysisStock} unidades; el catálogo tiene actualmente ${liveStock}.`
+        : `El stock actual del catálogo es ${liveStock}.`;
+      if (!window.confirm(
+        `¿Registrar ${qty} unidades para ${product.name}?\n${note}\n` +
+        "La recomendación es histórica; confirma que aún deseas planificarla."
+      )) return;
       const { data } = await multiAgentService.createFollowup({
         analysis_id: analysisId,
         product_id: product.id,
@@ -240,6 +267,7 @@ export default function MultiAgentPage() {
         notes: "Seguimiento creado desde el asistente multiagente",
       });
       const updated = await loadFollowups();
+      setSelectedCatalogId(String(product.id));
       const created = updated.find(f => f.id === data.id);
       setFollowupId(data.id);
       setPreview(null);
@@ -280,6 +308,7 @@ export default function MultiAgentPage() {
       ]);
       const stockAfter = productResponse.data.stock;
       setProductStock(productResponse.data);
+      setStockRule(null);
       setReceiptResult({
         stockBefore,
         stockAfter,
@@ -304,13 +333,31 @@ export default function MultiAgentPage() {
       .then(({ data }) => {
         const list = Array.isArray(data) ? data : [];
         setAnalyses(list);
-        if (list.length) setAnalysisId(String(list[0].id));
+        const valid = list.filter(a => !String(a.source_filename || "").startsWith("REGLA_STOCK_SIN_XGBOOST_"));
+        setAnalysisId(incomingAnalysisId || String(valid[0]?.id || ""));
       })
       .catch(() => toast.error("No se pudieron cargar los análisis"));
 
     loadFollowups()
       .catch(() => toast.error("No se pudieron cargar los seguimientos"));
-  }, []);
+  }, [incomingAnalysisId]);
+
+  // Permite continuar desde una fila concreta del análisis sin volver a buscar el medicamento.
+  useEffect(() => {
+    if (!incomingSku) return;
+    let alive = true;
+    productsService.list({ search: incomingSku, page: 1, size: 100 })
+      .then(({data}) => {
+        if (!alive) return;
+        const matched = (data?.items || []).find(p =>
+          String(p.sku).toLowerCase() === incomingSku.toLowerCase());
+        if (matched) {
+          setCatalogMatches([matched]);
+          setSelectedCatalogId(String(matched.id));
+        }
+      }).catch(() => {});
+    return () => { alive = false; };
+  }, [incomingSku]);
 
   const sendMessage = async (event) => {
     event.preventDefault();
@@ -334,7 +381,7 @@ export default function MultiAgentPage() {
         message: question,
         agent,
         analysis_id: analysisId || null,
-        product_id: agent === "seguimiento" ? null : (selectedCatalogId || null),
+        product_id: selectedCatalogId || null,
         followup_id: followupId || null,
         history: messages.slice(-10).map(item => ({
           role: item.role,
@@ -460,111 +507,14 @@ export default function MultiAgentPage() {
         </p>
       </div>
 
-      <section className="rounded-xl border bg-white p-5 space-y-4">
-        <h2 className="font-semibold text-slate-900">
-          Consulta a los agentes
-        </h2>
-
-        <div className="grid gap-3 md:grid-cols-2">
-          <label className="space-y-1 text-sm">
-            <span>Agente</span>
-            <select
-              className={inputClass}
-              value={agent}
-              onChange={e => setAgent(e.target.value)}
-            >
-              <option value="automatico">Selección automática</option>
-              <option value="inventario">Agente 1: Inventario</option>
-              <option value="seguimiento">Agente 2: Seguimiento</option>
-              <option value="colaboracion">Colaboración de ambos</option>
-            </select>
-          </label>
-
-          <label className="space-y-1 text-sm">
-            <span>Análisis de inventario</span>
-            <select
-              className={inputClass}
-              value={analysisId}
-              onChange={e => {
-                setAnalysisId(e.target.value);
-                setMessages([]);
-              }}
-            >
-              <option value="">Sin análisis seleccionado</option>
-
-{analyses.map(a => (
-  <option key={a.id} value={a.id}>
-    {getAnalysisLabel(a)}
-  </option>
-))}
-
-            </select>
-          </label>
-        </div>
-
-        <p className="text-xs text-slate-600">
-          {selectedCatalogId
-            ? "Consulta vinculada al producto seleccionado en «Del agente 1 al agente 2». Se usa su stock actual de Productos."
-            : followupId
-              ? "Consulta vinculada al producto del seguimiento seleccionado."
-              : "Para consultar el stock vigente de un medicamento concreto, selecciónalo en el buscador inferior o escribe su SKU exacto."}
-          {analysisId ? " Los análisis históricos conservan el stock registrado en su fecha." : ""}
-        </p>
-
-        <div className="min-h-48 max-h-96 space-y-3 overflow-y-auto rounded-lg bg-slate-50 p-4">
-          {messages.length === 0 && (
-            <p className="text-sm text-slate-500">
-              Pregunta qué medicamentos necesitan reabastecimiento
-              o cuáles tienen seguimientos pendientes.
-            </p>
-          )}
-
-          {messages.map((item, index) => (
-            <div
-              key={index}
-              className={`rounded-lg p-3 text-sm ${
-                item.role === "user"
-                  ? "ml-8 bg-blue-100"
-                  : "mr-8 border bg-white"
-              }`}
-            >
-              <p className="mb-1 font-semibold">
-                {item.role === "user"
-                  ? "Tú"
-                  : `FarmaStock AI · ${item.selectedAgent || "Asistente"}`}
-              </p>
-
-{item.role === "assistant" ? (
-  <div className="text-sm leading-relaxed text-slate-700 [&_p]:mb-3 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_ul]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:mb-1">
-    <ReactMarkdown>
-      {item.text || ""}
-    </ReactMarkdown>
-  </div>
-) : (
-  <p className="whitespace-pre-wrap">{item.text}</p>
-)}
-
-            </div>
-          ))}
-        </div>
-
-        <form onSubmit={sendMessage} className="space-y-3">
-          <textarea
-            className={inputClass}
-            rows={3}
-            maxLength={1000}
-            value={message}
-            onChange={e => setMessage(e.target.value)}
-            placeholder="¿Qué medicamentos debo reabastecer y cuáles siguen pendientes?"
-          />
-          <button className={buttonClass} disabled={loading || !message.trim()}>
-            {loading ? "Procesando..." : "Enviar consulta"}
-          </button>
-        </form>
+      <section className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-2 text-sm">
+        <h2 className="font-semibold text-blue-950">Asistente único · Consulta → Decisión → Seguimiento → Recepción</h2>
+        <p>El módulo <Link className="underline font-semibold" to="/ml/stock-analysis">Análisis y reabastecimiento</Link> muestra los pronósticos XGBoost. Aquí se toma la decisión y se registra su seguimiento. Para un producto nuevo también puedes usar sus límites de stock.</p>
+        <p><strong>Orden:</strong> elige producto y origen de la recomendación → consulta a los agentes → acepta una reposición → gestiona el seguimiento → confirma recepción. Las operaciones requieren confirmación.</p>
+        {incomingSku && <p className="font-semibold text-blue-900">Contexto recibido de Análisis y reabastecimiento: SKU {incomingSku}. {incomingIntent === "planificar" ? "Revisa la sección 2 para aceptar la recomendación." : "Consulta al asistente en la sección 3."}</p>}
       </section>
-
       <section className="rounded-xl border bg-white p-5 space-y-4">
-        <h2 className="font-semibold text-slate-900">Del agente 1 al agente 2 — cualquier producto</h2>
+        <h2 className="font-semibold text-slate-900">1. Medicamento del catálogo · Sin historial XGBoost</h2>
         <p className="text-sm text-slate-600">
           Busca cualquier medicamento del módulo <strong>Productos</strong>. El agente 1 consulta sus
           niveles de stock y, si está bajo el mínimo, propone reponer hasta el máximo.
@@ -623,11 +573,11 @@ export default function MultiAgentPage() {
       </section>
 
       <section className="rounded-xl border bg-white p-5 space-y-4">
-        <h2 className="font-semibold text-slate-900">Registrar seguimiento desde un análisis</h2>
+        <h2 className="font-semibold text-slate-900">2. Recomendación XGBoost · Con análisis histórico</h2>
         <p className="text-sm text-slate-600">
-          Primero crea el medicamento en <strong>Productos</strong> y analiza sus ventas en
-          <strong> Análisis y reabastecimiento</strong>. Después selecciona aquí el mismo
-          análisis y un producto recomendado. No se crean productos ni análisis ficticios automáticamente.
+          Si llegaste desde Análisis y reabastecimiento, el análisis y medicamento ya vienen seleccionados.
+          La cantidad proviene de un análisis histórico de XGBoost. Antes de registrar se consulta el stock vigente de Productos y se muestra una confirmación. La decisión final corresponde al usuario.
+          No hace falta crear ni cargar un dataset nuevo para hacer seguimiento de un análisis existente.
         </p>
         <form onSubmit={createFollowupFromAnalysis} className="space-y-3">
           <label className="block space-y-1 text-sm">
@@ -666,7 +616,110 @@ export default function MultiAgentPage() {
 
       <section className="rounded-xl border bg-white p-5 space-y-4">
         <h2 className="font-semibold text-slate-900">
-          Seguimiento de reposiciones
+          3. Consultar al asistente único (agente 1, agente 2 o ambos)
+        </h2>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="space-y-1 text-sm">
+            <span>Agente</span>
+            <select
+              className={inputClass}
+              value={agent}
+              onChange={e => setAgent(e.target.value)}
+            >
+              <option value="automatico">Selección automática</option>
+              <option value="inventario">Agente 1: Inventario</option>
+              <option value="seguimiento">Agente 2: Seguimiento</option>
+              <option value="colaboracion">Colaboración de ambos</option>
+            </select>
+          </label>
+
+          <label className="space-y-1 text-sm">
+            <span>Análisis de inventario</span>
+            <select
+              className={inputClass}
+              value={analysisId}
+              onChange={e => {
+                setAnalysisId(e.target.value);
+                setMessages([]);
+              }}
+            >
+              <option value="">Sin análisis seleccionado</option>
+
+{analyses.map(a => (
+  <option key={a.id} value={a.id}>
+    {getAnalysisLabel(a)}
+  </option>
+))}
+
+            </select>
+          </label>
+        </div>
+
+        <p className="text-xs text-slate-600">
+          {selectedCatalogId
+            ? "Consulta vinculada al producto seleccionado en «Del agente 1 al agente 2». Se usa su stock actual de Productos."
+            : followupId
+              ? "Consulta vinculada al producto del seguimiento seleccionado."
+              : "Para consultar el stock vigente de un medicamento concreto, selecciónalo en el buscador inferior o escribe su SKU exacto."}
+          {analysisId ? " Los análisis históricos conservan el stock registrado en su fecha; el catálogo proporciona las existencias actuales." : ""}
+        </p>
+
+        <div className="min-h-48 max-h-96 space-y-3 overflow-y-auto rounded-lg bg-slate-50 p-4">
+          {messages.length === 0 && (
+            <p className="text-sm text-slate-500">
+              Pregunta qué medicamentos necesitan reabastecimiento
+              o cuáles tienen seguimientos pendientes.
+            </p>
+          )}
+
+          {messages.map((item, index) => (
+            <div
+              key={index}
+              className={`rounded-lg p-3 text-sm ${
+                item.role === "user"
+                  ? "ml-8 bg-blue-100"
+                  : "mr-8 border bg-white"
+              }`}
+            >
+              <p className="mb-1 font-semibold">
+                {item.role === "user"
+                  ? "Tú"
+                  : `FarmaStock AI · ${item.selectedAgent || "Asistente"}`}
+              </p>
+
+{item.role === "assistant" ? (
+  <div className="text-sm leading-relaxed text-slate-700 [&_p]:mb-3 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_ul]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:mb-1">
+    <ReactMarkdown>
+      {item.text || ""}
+    </ReactMarkdown>
+  </div>
+) : (
+  <p className="whitespace-pre-wrap">{item.text}</p>
+)}
+
+            </div>
+          ))}
+        </div>
+
+        <form onSubmit={sendMessage} className="space-y-3">
+          <textarea
+            className={inputClass}
+            rows={3}
+            maxLength={1000}
+            value={message}
+            onChange={e => setMessage(e.target.value)}
+            placeholder="¿Qué medicamentos debo reabastecer y cuáles siguen pendientes?"
+          />
+          <button className={buttonClass} disabled={loading || !message.trim()}>
+            {loading ? "Procesando..." : "Enviar consulta"}
+          </button>
+        </form>
+      </section>
+
+      <section className="rounded-xl border bg-white p-5 space-y-4">
+        <h2 className="font-semibold text-slate-900">
+          4. Gestionar seguimiento de reposición
         </h2>
 
         <p className="text-sm text-slate-600">
@@ -680,6 +733,11 @@ export default function MultiAgentPage() {
             value={followupId}
             onChange={e => {
               setFollowupId(e.target.value);
+              const record = followups.find(f => String(f.id) === e.target.value);
+              if (record?.product_id) {
+                setSelectedCatalogId(String(record.product_id));
+                setCatalogSearch(record.product_sku || "");
+              }
               setPreview(null);
             }}
           >
@@ -717,6 +775,16 @@ export default function MultiAgentPage() {
 
           </select>
 
+          <div className="flex flex-wrap gap-2 text-xs">
+            <button type="button" className="rounded-lg border px-3 py-2 hover:bg-slate-50"
+              onClick={() => { setActionMessage("Pospón esta reposición porque el proveedor aún no entregó."); setPreview(null); }}>
+              Preparar posposición
+            </button>
+            <button type="button" className="rounded-lg border px-3 py-2 hover:bg-slate-50"
+              onClick={() => { setActionMessage("Reactiva la reposición porque el proveedor confirmó su entrega."); setPreview(null); }}>
+              Preparar reactivación
+            </button>
+          </div>
           <textarea
             className={inputClass}
             rows={2}
@@ -775,7 +843,7 @@ export default function MultiAgentPage() {
       </section>
 
       <section className="rounded-xl border bg-white p-5 space-y-4">
-        <h2 className="font-semibold text-slate-900">Recepción de reabastecimiento</h2>
+        <h2 className="font-semibold text-slate-900">5. Confirmar recepción de reabastecimiento</h2>
         <p className="text-sm text-slate-600">
           Utiliza el seguimiento seleccionado arriba, de cualquier medicamento. Confirma la recepción
           <strong> solo cuando las unidades hayan llegado realmente</strong>: esta operación actualiza

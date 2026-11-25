@@ -1,4 +1,5 @@
 from typing import Literal, Optional
+import re
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -8,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_current_user
 from app.db.database import get_db
-from app.models.models import Product, ReplenishmentFollowup
+from app.models.models import Product, ReplenishmentFollowup, StockAnalysis
 from app.api.v1.endpoints.replenishment import calculate_stock_rule
 from app.api.v1.endpoints.agent import (
     AgentChatRequest,
@@ -71,46 +72,77 @@ async def multi_agent_chat(
     selected = select_agent(request.message, request.agent)
     history = [entry.model_dump() for entry in request.history]
 
-    # Identificar producto en el catálogo (fuente vigente), en vez de tomar
-    # el stock de una instantánea almacenada en un análisis histórico.
+    # Resolver el medicamento desde el catálogo ACTUAL, no desde el análisis.
+    # Prioridad: producto seleccionado en React > SKU escrito en la pregunta >
+    # seguimiento seleccionado > nombre inequívoco. Si el SKU es explícito,
+    # NUNCA responder con datos históricos cuando no se logra resolver.
     selected_product = None
+    company_id = user["company_id"]
+
     if request.product_id is not None:
         selected_product = await db.scalar(select(Product).where(
             Product.id == request.product_id,
-            Product.company_id == user["company_id"],
+            Product.company_id == company_id,
             Product.active.is_(True),
         ))
         if selected_product is None:
-            raise HTTPException(404, "Producto no encontrado")
-    elif selected != "preparar_accion":
-        # Si el usuario escribe el SKU o nombre en el chat, localizar una
-        # coincidencia inequívoca dentro de SU empresa, no en otra empresa.
-        company_products = (await db.scalars(select(Product).where(
-            Product.company_id == user["company_id"],
+            raise HTTPException(404, "El producto seleccionado no existe en el catálogo vigente")
+
+    # Identificar SKU escrito por el usuario (ej. DEMO-FAR-001 o FAR-202),
+    # incluso después de recargar React y perder la selección del buscador.
+    # Solo se reconocen SKU explícitos conocidos de la propia compañía.
+    if selected_product is None and selected != "preparar_accion":
+        products = (await db.scalars(select(Product).where(
+            Product.company_id == company_id,
             Product.active.is_(True),
         ))).all()
-        normalized_message = request.message.casefold()
-        matches = [p for p in company_products if (
-            (p.sku and p.sku.casefold() in normalized_message)
-            or (p.name and (
-                p.name.casefold() in normalized_message
-                or " ".join(p.name.casefold().split()[:2]) in normalized_message
-            ))
+        query = request.message.casefold()
+        sku_matches = [p for p in products if p.sku and re.search(
+            rf"(?<![\w-]){re.escape(p.sku.casefold())}(?![\w-])", query
         )]
-        if len(matches) == 1:
-            selected_product = matches[0]
+        if len(sku_matches) == 1:
+            selected_product = sku_matches[0]
+        elif len(sku_matches) > 1:
+            raise HTTPException(422, "La consulta contiene varios SKU. Selecciona un medicamento")
 
-    # Un seguimiento seleccionado también establece el contexto de producto.
+        # Una referencia SKU: X que no coincide con el catálogo NO debe
+        # caer en el análisis histórico y entregar existencias obsoletas.
+        if selected_product is None:
+            explicit_sku = re.search(r"\bsku\s*:\s*([\w-]+)", query)
+            if explicit_sku:
+                raise HTTPException(
+                    404,
+                    f"No se encontró el SKU '{explicit_sku.group(1)}' en Productos. "
+                    "No se utilizará un análisis histórico como stock actual.",
+                )
+
     if selected_product is None and request.followup_id is not None:
         followup = await db.scalar(select(ReplenishmentFollowup).where(
             ReplenishmentFollowup.id == request.followup_id,
-            ReplenishmentFollowup.company_id == user["company_id"],
+            ReplenishmentFollowup.company_id == company_id,
         ))
         if followup is not None:
             selected_product = await db.scalar(select(Product).where(
                 Product.id == followup.product_id,
-                Product.company_id == user["company_id"],
+                Product.company_id == company_id,
             ))
+
+    # Cuando no aparece el SKU, permitir nombre inequívoco. No escoger el
+    # primero de varios medicamentos similares ni mezclar sus respuestas.
+    if selected_product is None and selected != "preparar_accion":
+        products = (await db.scalars(select(Product).where(
+            Product.company_id == company_id,
+            Product.active.is_(True),
+        ))).all()
+        query = request.message.casefold()
+        name_matches = [p for p in products if p.name and (
+            p.name.casefold() in query or
+            (len(p.name.split()) >= 2 and " ".join(p.name.casefold().split()[:2]) in query)
+        )]
+        if len(name_matches) == 1:
+            selected_product = name_matches[0]
+        elif len(name_matches) > 1 and selected in ("inventario", "colaboracion"):
+            raise HTTPException(422, "Se encontraron varios medicamentos similares. Indica el SKU exacto")
 
     # Cuando se selecciona un producto del catálogo, el Agente 1 utiliza una herramienta
     # determinista de reglas de stock sobre el catálogo vigente.
@@ -118,6 +150,25 @@ async def multi_agent_chat(
     if selected_product is not None and selected in ("inventario", "colaboracion"):
         product = selected_product
         recommendation = calculate_stock_rule(product)
+        historical_note = ""
+        # El análisis es una instantánea: se añade como referencia histórica,
+        # jamás en sustitución del stock vigente del catálogo.
+        if request.analysis_id is not None:
+            analysis = await db.scalar(select(StockAnalysis).where(
+                StockAnalysis.id == request.analysis_id,
+                StockAnalysis.company_id == company_id,
+            ))
+            if analysis and (analysis.metrics or {}).get("uses_xgboost") is not False:
+                for item in (analysis.result or {}).get("products", []):
+                    if str(item.get("product_id", "")).casefold() == str(product.sku).casefold():
+                        historical_note = (
+                            "\n\n**Análisis histórico seleccionado** (no es stock actual):\n"
+                            f"- Stock registrado al analizar: {item.get('current_stock', 'no disponible')}.\n"
+                            f"- Demanda pronosticada para el horizonte: {item.get('forecast_demand_horizon', 'no disponible')}.\n"
+                            f"- Unidades de déficit calculadas entonces: {item.get('understock_units', 'no disponible')}.\n"
+                            "Revisa el stock vigente antes de aceptar una recomendación histórica."
+                        )
+                        break
         inventory_answer = (
             f"**{product.name}** (SKU: {product.sku})\n\n"
             f"- Stock actual: **{recommendation['current_stock']}** unidades.\n"
@@ -128,6 +179,7 @@ async def multi_agent_chat(
             f"**Origen:** catálogo de Productos (existencias actuales). "
             f"El análisis histórico, si existe, conserva sus valores de la fecha en que se generó. "
             f"Esta regla **no es una predicción de XGBoost**."
+            + historical_note
         )
         if selected == "inventario":
             return {
@@ -177,6 +229,13 @@ async def multi_agent_chat(
             **result,
         }
 
+    if selected_product is None and selected in ("inventario", "colaboracion") and (
+        "stock actual" in request.message.casefold() or
+        "inventario actual" in request.message.casefold() or
+        "stock vigente" in request.message.casefold()
+    ):
+        raise HTTPException(422, "Para consultar el stock vigente, selecciona un medicamento del catálogo o indica su SKU exacto")
+
     if selected == "colaboracion":
         if request.analysis_id is None:
             raise HTTPException(
@@ -220,7 +279,11 @@ async def multi_agent_chat(
             "success": True,
             "selected_agent": "colaboracion",
             "agents_used": ["inventario", "seguimiento"],
-            "response": tracking_result["response"],
+            "response": (
+                "**Consulta analítica histórica (no equivale al stock vigente)**\n\n"
+                + inventory_result.response + "\n\n**Seguimiento**\n\n"
+                + tracking_result["response"]
+            ),
             "agent_results": {
                 "inventario": inventory_result.response,
                 "seguimiento": tracking_result["response"],
@@ -258,7 +321,11 @@ async def multi_agent_chat(
     return {
         "success": True,
         "selected_agent": "inventario",
-        "response": result.response,
+        "response": (
+            "**Resultado del análisis histórico seleccionado.** "
+            "Para conocer el stock vigente, selecciona un producto del catálogo o escribe su SKU exacto.\n\n"
+            + result.response
+        ),
         "model": result.model,
         "tools_used": result.tools_used,
     }

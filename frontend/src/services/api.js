@@ -151,7 +151,6 @@ export const agentService = {
 };
 
 
-
 export const multiAgentService = {
   chat: (data) =>
     api.post("/multi-agent/chat", data),
@@ -172,7 +171,7 @@ export const multiAgentService = {
   createFollowup: (data) =>
     api.post("/replenishments/", data),
 
-    receiveFollowup: (id, data) =>
+  receiveFollowup: (id, data) =>
     api.post(`/replenishments/${id}/receive`, data),
 
   recommendProduct: (id) =>
@@ -181,4 +180,3 @@ export const multiAgentService = {
   createFromStockRule: (data) =>
     api.post("/replenishments/from-stock-rule", data),
 };
-
