@@ -1,4 +1,4 @@
-﻿
+
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 
@@ -36,10 +36,10 @@ function getAnalysisLabel(analysis) {
     }
   }
 
-  const baseName = name || "AnÃ¡lisis de inventario";
+  const baseName = name || "An\u00e1lisis de inventario";
 
   if (dateLabel) {
-    return `${baseName} â€” ${dateLabel}`;
+    return `${baseName} \u2014 ${dateLabel}`;
   }
 
   return `${baseName} (${String(analysis.id).slice(0, 8)})`;
@@ -72,7 +72,7 @@ export default function MultiAgentPage() {
         setAnalyses(list);
         if (list.length) setAnalysisId(String(list[0].id));
       })
-      .catch(() => toast.error("No se pudieron cargar los anÃ¡lisis"));
+      .catch(() => toast.error("No se pudieron cargar los análisis"));
 
     loadFollowups()
       .catch(() => toast.error("No se pudieron cargar los seguimientos"));
@@ -84,7 +84,7 @@ export default function MultiAgentPage() {
     if (!question || loading) return;
 
     if (agent === "colaboracion" && !analysisId) {
-      toast.error("Selecciona un anÃ¡lisis para la colaboraciÃ³n");
+      toast.error("Selecciona un análisis para la colaboración");
       return;
     }
 
@@ -127,7 +127,7 @@ export default function MultiAgentPage() {
     event.preventDefault();
 
     if (!followupId || !actionMessage.trim() || loading) {
-      toast.error("Selecciona un seguimiento y escribe la acciÃ³n");
+      toast.error("Selecciona un seguimiento y escribe la acción");
       return;
     }
 
@@ -141,12 +141,12 @@ export default function MultiAgentPage() {
       });
 
       if (!data.success) {
-        toast.error(data.detail || "AcciÃ³n no vÃ¡lida");
+        toast.error(data.detail || "Acción no válida");
         return;
       }
 
       if (!data.requires_confirmation) {
-        toast(data.message || "No se identificÃ³ un cambio");
+        toast(data.message || "No se identificó un cambio");
         return;
       }
 
@@ -154,7 +154,7 @@ export default function MultiAgentPage() {
     } catch (error) {
       toast.error(
         error.response?.data?.detail ||
-        "No se pudo preparar la acciÃ³n"
+        "No se pudo preparar la acción"
       );
     } finally {
       setLoading(false);
@@ -181,7 +181,7 @@ export default function MultiAgentPage() {
         ...prev,
         {
           role: "assistant",
-          text: `Se confirmÃ³ el cambio de ${data.status} para el seguimiento seleccionado.`,
+          text: `Se confirmó el cambio de ${data.status} para el seguimiento seleccionado.`,
           selectedAgent: "seguimiento",
         },
       ]);
@@ -194,7 +194,7 @@ export default function MultiAgentPage() {
       toast.error(
         typeof detail === "string"
           ? detail
-          : "No se pudo confirmar la acciÃ³n"
+          : "No se pudo confirmar la acción"
       );
       setPreview(null);
       await loadFollowups().catch(() => {});
@@ -216,7 +216,7 @@ export default function MultiAgentPage() {
           Asistente multiagente
         </h1>
         <p className="mt-1 text-sm text-slate-600">
-          PredicciÃ³n, reabastecimiento y seguimiento con agentes de IA.
+          Predicción, reabastecimiento y seguimiento con agentes de IA.
         </p>
       </div>
 
@@ -233,15 +233,15 @@ export default function MultiAgentPage() {
               value={agent}
               onChange={e => setAgent(e.target.value)}
             >
-              <option value="automatico">SelecciÃ³n automÃ¡tica</option>
+              <option value="automatico">Selección automática</option>
               <option value="inventario">Agente 1: Inventario</option>
               <option value="seguimiento">Agente 2: Seguimiento</option>
-              <option value="colaboracion">ColaboraciÃ³n de ambos</option>
+              <option value="colaboracion">Colaboración de ambos</option>
             </select>
           </label>
 
           <label className="space-y-1 text-sm">
-            <span>AnÃ¡lisis de inventario</span>
+            <span>Análisis de inventario</span>
             <select
               className={inputClass}
               value={analysisId}
@@ -250,7 +250,7 @@ export default function MultiAgentPage() {
                 setMessages([]);
               }}
             >
-              <option value="">Sin anÃ¡lisis seleccionado</option>
+              <option value="">Sin análisis seleccionado</option>
 
 {analyses.map(a => (
   <option key={a.id} value={a.id}>
@@ -265,8 +265,8 @@ export default function MultiAgentPage() {
         <div className="min-h-48 max-h-96 space-y-3 overflow-y-auto rounded-lg bg-slate-50 p-4">
           {messages.length === 0 && (
             <p className="text-sm text-slate-500">
-              Pregunta quÃ© medicamentos necesitan reabastecimiento
-              o cuÃ¡les tienen seguimientos pendientes.
+              Pregunta qué medicamentos necesitan reabastecimiento
+              o cuáles tienen seguimientos pendientes.
             </p>
           )}
 
@@ -281,8 +281,8 @@ export default function MultiAgentPage() {
             >
               <p className="mb-1 font-semibold">
                 {item.role === "user"
-                  ? "TÃº"
-                  : `FarmaStock AI Â· ${item.selectedAgent || "Asistente"}`}
+                  ? "Tú"
+                  : `FarmaStock AI · ${item.selectedAgent || "Asistente"}`}
               </p>
               <p className="whitespace-pre-wrap">{item.text}</p>
             </div>
@@ -296,7 +296,7 @@ export default function MultiAgentPage() {
             maxLength={1000}
             value={message}
             onChange={e => setMessage(e.target.value)}
-            placeholder="Â¿QuÃ© medicamentos debo reabastecer y cuÃ¡les siguen pendientes?"
+            placeholder="¿Qué medicamentos debo reabastecer y cuáles siguen pendientes?"
           />
           <button className={buttonClass} disabled={loading || !message.trim()}>
             {loading ? "Procesando..." : "Enviar consulta"}
@@ -310,8 +310,8 @@ export default function MultiAgentPage() {
         </h2>
 
         <p className="text-sm text-slate-600">
-          Selecciona un seguimiento y solicita una acciÃ³n.
-          NingÃºn cambio se guardarÃ¡ sin confirmaciÃ³n.
+          Selecciona un seguimiento y solicita una acción.
+          Ningún cambio se guardará sin confirmación.
         </p>
 
         <form onSubmit={prepareAction} className="space-y-3">
@@ -349,7 +349,7 @@ export default function MultiAgentPage() {
 
   return (
     <option key={f.id} value={f.id}>
-      {`${productLabel} Â· ${skuLabel} Â· ${f.status} Â· ${f.planned_units} unidades${dateLabel ? ` Â· ${dateLabel}` : ""}`}
+      {`${productLabel} · ${skuLabel} · ${f.status} · ${f.planned_units} unidades${dateLabel ? ` · ${dateLabel}` : ""}`}
     </option>
   );
 })}
@@ -366,30 +366,30 @@ export default function MultiAgentPage() {
               setActionMessage(e.target.value);
               setPreview(null);
             }}
-            placeholder="Por ejemplo: Pospon esta reposiciÃ³n porque el proveedor aÃºn no entregÃ³."
+            placeholder="Por ejemplo: Pospon esta reposición porque el proveedor aún no entregó."
           />
 
           <button
             className={buttonClass}
             disabled={loading || !followupId || !actionMessage.trim()}
           >
-            {loading ? "Procesando..." : "Preparar acciÃ³n con Gemini"}
+            {loading ? "Procesando..." : "Preparar acción con Gemini"}
           </button>
         </form>
 
         {preview && (
           <div className="space-y-3 rounded-lg border border-amber-300 bg-amber-50 p-4">
             <h3 className="font-semibold text-slate-900">
-              ConfirmaciÃ³n requerida
+              Confirmación requerida
             </h3>
             <p className="text-sm">{preview.message}</p>
             <p className="text-sm">
               Estado actual: <strong>{preview.current_status}</strong>
-              {" â†’ "}
+              {" → "}
               Estado propuesto: <strong>{preview.proposed_status}</strong>
             </p>
             <p className="text-xs text-slate-600">
-              Esta acciÃ³n cambia el estado del seguimiento, no el stock.
+              Esta acción cambia el estado del seguimiento, no el stock.
             </p>
 
             <div className="flex flex-wrap gap-3">
