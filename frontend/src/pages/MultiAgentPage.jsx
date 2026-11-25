@@ -1,5 +1,6 @@
-
+﻿
 import { useEffect, useState } from "react";
+import ReactMarkdown from "react-markdown";
 import toast from "react-hot-toast";
 
 import {
@@ -288,7 +289,17 @@ export default function MultiAgentPage() {
                   ? "Tú"
                   : `FarmaStock AI · ${item.selectedAgent || "Asistente"}`}
               </p>
-              <p className="whitespace-pre-wrap">{item.text}</p>
+
+{item.role === "assistant" ? (
+  <div className="text-sm leading-relaxed text-slate-700 [&_p]:mb-3 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_ul]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:mb-1">
+    <ReactMarkdown>
+      {item.text || ""}
+    </ReactMarkdown>
+  </div>
+) : (
+  <p className="whitespace-pre-wrap">{item.text}</p>
+)}
+
             </div>
           ))}
         </div>
