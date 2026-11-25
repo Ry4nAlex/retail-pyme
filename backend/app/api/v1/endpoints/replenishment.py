@@ -389,3 +389,39 @@ async def chat_with_tracking_agent(
             detail="No se pudo completar la consulta con Gemini.",
         )
 
+
+class ReplenishmentActionPreviewRequest(BaseModel):
+    followup_id: UUID
+    message: str = Field(
+        min_length=1,
+        max_length=1000,
+    )
+
+
+@router.post("/action-preview")
+async def preview_tracking_action(
+    request: ReplenishmentActionPreviewRequest,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    agent = get_replenishment_tracking_agent()
+
+    try:
+        return await agent.prepare_status_action(
+            message=request.message,
+            followup_id=request.followup_id,
+            db=db,
+            company_id=user["company_id"],
+        )
+
+    except RuntimeError:
+        raise HTTPException(
+            status_code=502,
+            detail="No se pudo interpretar la acción con Gemini.",
+        )
+
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="No se pudo preparar la acción.",
+        )
