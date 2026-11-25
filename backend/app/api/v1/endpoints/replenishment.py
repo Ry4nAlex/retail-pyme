@@ -31,6 +31,37 @@ from app.services.replenishment_tracking_agent import (
 
 from typing import Literal
 
+def calculate_stock_rule(product: Product) -> dict:
+    """Regla del catálogo para cualquier producto; no sustituye un pronóstico XGBoost."""
+    current = int(product.stock or 0)
+    minimum = int(product.min_stock or 0)
+    maximum = int(product.max_stock or 0)
+    if current < 0 or minimum < 0 or maximum < 0:
+        raise HTTPException(422, "El stock o los límites del producto son inválidos")
+    if maximum < minimum:
+        raise HTTPException(422, "El stock máximo no puede ser menor que el mínimo")
+    target = maximum if maximum > 0 else minimum
+    recommended = max(0, target - current) if current < minimum else 0
+    return {
+        "product_id": str(product.id),
+        "sku": product.sku,
+        "product_name": product.name,
+        "current_stock": current,
+        "min_stock": minimum,
+        "max_stock": maximum,
+        "target_stock": target,
+        "recommended_units": recommended,
+        "method": "regla_stock_catalogo",
+        "uses_xgboost": False,
+        "explanation": (
+            "El stock está por debajo del mínimo; se sugiere reponer hasta "
+            "el máximo configurado. Esto NO es una predicción de XGBoost."
+            if recommended > 0
+            else "El stock no está por debajo del mínimo; no se propone reposición."
+        ),
+    }
+
+
 router = APIRouter(
     prefix="/replenishments",
     tags=["Seguimiento de reabastecimiento"],
@@ -538,4 +569,112 @@ async def confirm_tracking_action(
     await db.flush()
     await db.refresh(followup)
 
+    return followup
+
+
+# Flujo general: consultar cualquier producto y registrar seguimiento desde React.
+class StockRuleFollowupCreate(BaseModel):
+    product_id: UUID
+    planned_units: int = Field(gt=0, le=1000000)
+    notes: Optional[str] = Field(default=None, max_length=500)
+
+
+@router.get("/product-recommendation/{product_id}")
+async def get_product_stock_rule(
+    product_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    product = await db.scalar(
+        select(Product).where(
+            Product.id == product_id,
+            Product.company_id == user["company_id"],
+            Product.active.is_(True),
+        )
+    )
+    if not product:
+        raise HTTPException(404, "Producto no encontrado")
+    return calculate_stock_rule(product)
+
+
+@router.post("/from-stock-rule", response_model=ReplenishmentResponse, status_code=201)
+async def create_followup_from_stock_rule(
+    data: StockRuleFollowupCreate,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    company_id = user["company_id"]
+    product = await db.scalar(
+        select(Product)
+        .where(
+            Product.id == data.product_id,
+            Product.company_id == company_id,
+            Product.active.is_(True),
+        )
+        .with_for_update()
+    )
+    if product is None:
+        raise HTTPException(404, "Producto no encontrado")
+
+    recommendation = calculate_stock_rule(product)
+    if recommendation["recommended_units"] <= 0:
+        raise HTTPException(409, "El producto ya no requiere reposición por la regla de stock")
+
+    # Evita crear varios seguimientos abiertos para el mismo producto.
+    existing = await db.scalar(
+        select(ReplenishmentFollowup.id).where(
+            ReplenishmentFollowup.company_id == company_id,
+            ReplenishmentFollowup.product_id == product.id,
+            ReplenishmentFollowup.status.in_(["pendiente", "pospuesto"]),
+        )
+    )
+    if existing is not None:
+        raise HTTPException(409, "Ya existe una reposición abierta para este producto")
+
+    # La FK analysis_id es obligatoria: registramos una instantánea explícita
+    # de la regla de stock. NO es un análisis generado por XGBoost.
+    rule_analysis = StockAnalysis(
+        company_id=company_id,
+        created_by=user["user_id"],
+        dataset_id=None,
+        source_filename=f"REGLA_STOCK_SIN_XGBOOST_{product.sku}",
+        horizon_months=0,
+        total_products=1,
+        understock_count=1,
+        overstock_count=0,
+        healthy_count=0,
+        excess_value=0,
+        metrics={"source": "stock_rule", "uses_xgboost": False},
+        result={
+            "source": "stock_rule",
+            "uses_xgboost": False,
+            "summary": {"total_products": 1, "understock_count": 1},
+            "products": [{
+                "product_id": product.sku,
+                "product_name": product.name,
+                "status": "bajo_stock",
+                "current_stock": recommendation["current_stock"],
+                "target_stock": recommendation["target_stock"],
+                "understock_units": recommendation["recommended_units"],
+                "recommendation_method": "regla_stock_catalogo",
+            }],
+        },
+    )
+    db.add(rule_analysis)
+    await db.flush()
+
+    followup = ReplenishmentFollowup(
+        company_id=company_id,
+        analysis_id=rule_analysis.id,
+        product_id=product.id,
+        recommended_units=recommendation["recommended_units"],
+        planned_units=data.planned_units,
+        received_units=0,
+        status="pendiente",
+        notes=(data.notes or "Seguimiento por regla de stock; no es predicción XGBoost"),
+        created_by=user["user_id"],
+    )
+    db.add(followup)
+    await db.flush()
+    await db.refresh(followup)
     return followup

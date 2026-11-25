@@ -62,6 +62,14 @@ export default function MultiAgentPage() {
   const [preview, setPreview] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  // Selección de cualquier producto del catálogo, sin obligar a entrenar XGBoost.
+  const [catalogSearch, setCatalogSearch] = useState("");
+  const [catalogMatches, setCatalogMatches] = useState([]);
+  const [selectedCatalogId, setSelectedCatalogId] = useState("");
+  const [stockRule, setStockRule] = useState(null);
+  const [stockRulePlanned, setStockRulePlanned] = useState("");
+  const [stockRuleBusy, setStockRuleBusy] = useState(false);
+
   // Los medicamentos se crean desde el módulo Productos existente.
   // Esta sección solo registra seguimientos recomendados por un análisis real.
   const [recommendedProducts, setRecommendedProducts] = useState([]);
@@ -80,6 +88,76 @@ export default function MultiAgentPage() {
     const list = Array.isArray(response.data) ? response.data : [];
     setFollowups(list);
     return list;
+  };
+
+  const lookupCatalog = async () => {
+    const query = catalogSearch.trim();
+    if (!query) return toast.error("Escribe el SKU o nombre del medicamento");
+    setStockRuleBusy(true);
+    setCatalogMatches([]);
+    setSelectedCatalogId("");
+    setStockRule(null);
+    try {
+      const { data } = await productsService.list({ search: query, page: 1, size: 50 });
+      const matches = data?.items || [];
+      setCatalogMatches(matches);
+      if (!matches.length) toast("No se encontraron productos con ese nombre o SKU");
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "No se pudo consultar el catálogo");
+    } finally {
+      setStockRuleBusy(false);
+    }
+  };
+
+  const consultInventoryRule = async () => {
+    if (!selectedCatalogId) return;
+    setStockRuleBusy(true);
+    try {
+      const { data } = await multiAgentService.chat({
+        agent: "inventario",
+        product_id: selectedCatalogId,
+        message: "¿Conviene reabastecer este producto según sus niveles actuales de stock?",
+      });
+      setStockRule(data.recommendation || null);
+      setStockRulePlanned(String(data.recommendation?.recommended_units || ""));
+      setMessages(prev => [...prev,
+        { role: "user", text: `¿Conviene reabastecer ${data.recommendation?.product_name} según sus niveles de stock?` },
+        { role: "assistant", text: data.response, selectedAgent: "inventario" },
+      ]);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "No se pudo generar la recomendación");
+    } finally {
+      setStockRuleBusy(false);
+    }
+  };
+
+  const registerStockRuleFollowup = async () => {
+    if (!stockRule || Number(stockRule.recommended_units) <= 0) return;
+    const planned = Number(stockRulePlanned);
+    if (!Number.isInteger(planned) || planned <= 0) {
+      return toast.error("Ingresa una cantidad planificada válida");
+    }
+    if (!window.confirm(
+      `¿Registrar reposición de ${planned} unidades para ${stockRule.product_name}? ` +
+      "Se guardará como regla de stock, NO como predicción XGBoost."
+    )) return;
+    setStockRuleBusy(true);
+    try {
+      const { data } = await multiAgentService.createFromStockRule({
+        product_id: selectedCatalogId,
+        planned_units: planned,
+        notes: "Seguimiento aceptado desde React; recomendación por regla de stock (no XGBoost)",
+      });
+      await loadFollowups();
+      setFollowupId(data.id);
+      setPreview(null);
+      toast.success("Seguimiento pendiente registrado. Continúa con el agente 2.");
+    } catch (error) {
+      const detail = error.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : "No se pudo registrar el seguimiento");
+    } finally {
+      setStockRuleBusy(false);
+    }
   };
 
   // Cargar las recomendaciones guardadas. Un producto solo es elegible
@@ -174,13 +252,9 @@ export default function MultiAgentPage() {
     }
   };
 
-  const receiveDemoFollowup = async () => {
+  const receiveFollowup = async () => {
     const selected = selectedFollowupData;
     if (!selected || receiptBusy || !receiptArmed) return;
-    if (!String(selected.product_sku || "").toUpperCase().startsWith("DEMO-")) {
-      toast.error("La recepción demostrativa solo está permitida para SKU que comiencen con DEMO-");
-      return;
-    }
     if (selected.status !== "pendiente" || Number(selected.received_units) !== 0) {
       toast.error("Solo puedes recibir un seguimiento pendiente sin unidades recibidas");
       return;
@@ -188,8 +262,8 @@ export default function MultiAgentPage() {
     const qty = Number(selected.planned_units);
     if (!Number.isInteger(qty) || qty <= 0) return;
     const confirmed = window.confirm(
-      `Confirmar recepción DEMO de ${qty} unidades de ${selected.product_name}? ` +
-      "Esta operación modificará realmente el stock del producto ficticio en Supabase."
+      `¿Confirmas que realmente se recibieron ${qty} unidades de ${selected.product_name} (${selected.product_sku})? ` +
+      "Esta operación cambiará el stock REAL del producto y registrará un movimiento de inventario."
     );
     if (!confirmed) return;
     setReceiptBusy(true);
@@ -198,7 +272,7 @@ export default function MultiAgentPage() {
       const { data } = await multiAgentService.receiveFollowup(selected.id, {
         received_units: qty,
         confirmed: true,
-        notes: "Recepción de demostración confirmada desde React",
+        notes: "Recepción confirmada por usuario desde el asistente multiagente",
       });
       const [productResponse] = await Promise.all([
         productsService.get(selected.product_id),
@@ -215,7 +289,7 @@ export default function MultiAgentPage() {
         reference: `REPL-${data.id}`,
       });
       setReceiptArmed(false);
-      toast.success("Recepción DEMO registrada. Stock actualizado.");
+      toast.success("Recepción registrada. Stock actualizado.");
     } catch (error) {
       const detail = error.response?.data?.detail;
       toast.error(typeof detail === "string" ? detail : "No se pudo confirmar la recepción");
@@ -479,6 +553,65 @@ export default function MultiAgentPage() {
       </section>
 
       <section className="rounded-xl border bg-white p-5 space-y-4">
+        <h2 className="font-semibold text-slate-900">Del agente 1 al agente 2 — cualquier producto</h2>
+        <p className="text-sm text-slate-600">
+          Busca cualquier medicamento del módulo <strong>Productos</strong>. El agente 1 consulta sus
+          niveles de stock y, si está bajo el mínimo, propone reponer hasta el máximo.
+          Puedes aceptar una cantidad y registrar un seguimiento para el agente 2, sin subir un dataset nuevo.
+          <strong> Esta recomendación se calcula con reglas de stock, no con XGBoost.</strong>
+          Para utilizar pronósticos XGBoost selecciona un análisis histórico existente en la sección siguiente.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <input className={`${inputClass} flex-1 min-w-48`} value={catalogSearch}
+            onChange={e => setCatalogSearch(e.target.value)} placeholder="SKU o nombre del medicamento" />
+          <button type="button" className={buttonClass} disabled={stockRuleBusy}
+            onClick={lookupCatalog}>Buscar en Productos</button>
+        </div>
+        {catalogMatches.length > 0 && (
+          <label className="block space-y-1 text-sm">
+            <span>Medicamento del catálogo</span>
+            <select className={inputClass} value={selectedCatalogId}
+              onChange={e => {
+                setSelectedCatalogId(e.target.value);
+                setStockRule(null);
+                setStockRulePlanned("");
+              }}>
+              <option value="">Seleccionar medicamento</option>
+              {catalogMatches.map(p => (
+                <option key={p.id} value={p.id}>{p.name} · {p.sku} · stock {p.stock}</option>
+              ))}
+            </select>
+          </label>
+        )}
+        <button type="button" className={buttonClass}
+          disabled={!selectedCatalogId || stockRuleBusy}
+          onClick={consultInventoryRule}>Consultar recomendación del agente 1</button>
+        {stockRule && (
+          <div className="rounded-lg border p-4 space-y-3 text-sm">
+            <p><strong>{stockRule.product_name}</strong> · {stockRule.sku}</p>
+            <p>Stock actual: <strong>{stockRule.current_stock}</strong> ·
+              mínimo: <strong>{stockRule.min_stock}</strong> ·
+              máximo: <strong>{stockRule.max_stock}</strong></p>
+            <p>Reposición sugerida por regla: <strong>{stockRule.recommended_units}</strong> unidades.</p>
+            <p className="text-amber-700">No es una predicción XGBoost. {stockRule.explanation}</p>
+            {stockRule.recommended_units > 0 && (
+              <div className="flex gap-2 flex-wrap items-end">
+                <label className="block space-y-1">
+                  <span>Unidades a planificar</span>
+                  <input className={inputClass} type="number" min="1" step="1"
+                    value={stockRulePlanned} onChange={e => setStockRulePlanned(e.target.value)} />
+                </label>
+                <button type="button" className={buttonClass} disabled={stockRuleBusy}
+                  onClick={registerStockRuleFollowup}>
+                  Aceptar y enviar seguimiento al agente 2
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-xl border bg-white p-5 space-y-4">
         <h2 className="font-semibold text-slate-900">Registrar seguimiento desde un análisis</h2>
         <p className="text-sm text-slate-600">
           Primero crea el medicamento en <strong>Productos</strong> y analiza sus ventas en
@@ -505,7 +638,7 @@ export default function MultiAgentPage() {
           {!recommendationLoading && analysisId && recommendedProducts.length === 0 && (
             <p className="text-sm text-amber-700">
               El análisis seleccionado no contiene productos con recomendación positiva de reposición.
-              Ejecuta un nuevo análisis con las ventas del producto DEMO.
+              Puedes seleccionar otro análisis o utilizar la opción de regla de stock del catálogo sin cargar un dataset.
             </p>
           )}
           <label className="block space-y-1 text-sm">
@@ -633,9 +766,10 @@ export default function MultiAgentPage() {
       <section className="rounded-xl border bg-white p-5 space-y-4">
         <h2 className="font-semibold text-slate-900">Recepción de reabastecimiento</h2>
         <p className="text-sm text-slate-600">
-          Utiliza el seguimiento seleccionado arriba. Por seguridad, esta demostración
-          solo permite confirmar recepciones de productos con SKU <strong>DEMO-</strong>.
-          La operación sí actualizará el stock del producto ficticio en la base de datos.
+          Utiliza el seguimiento seleccionado arriba, de cualquier medicamento. Confirma la recepción
+          <strong> solo cuando las unidades hayan llegado realmente</strong>: esta operación actualiza
+          el inventario de la empresa y registra un movimiento. Para ensayos de exposición usa un
+          producto ficticio creado en el módulo Productos.
         </p>
         {selectedFollowupData ? (
           <div className="space-y-2 rounded-lg bg-slate-50 p-4 text-sm">
@@ -650,19 +784,18 @@ export default function MultiAgentPage() {
           <p className="text-sm text-slate-500">Selecciona un seguimiento en la sección anterior.</p>
         )}
         {selectedFollowupData?.status === "pendiente" &&
-         String(selectedFollowupData?.product_sku || "").toUpperCase().startsWith("DEMO-") &&
          Number(selectedFollowupData.received_units) === 0 && (
           <>
             <label className="flex items-start gap-2 text-sm">
               <input type="checkbox" checked={receiptArmed}
                 onChange={e => setReceiptArmed(e.target.checked)} />
-              Confirmo que se trata de un producto ficticio y deseo registrar la recepción
-              de {selectedFollowupData.planned_units} unidades.
+              Confirmo que recibí físicamente {selectedFollowupData.planned_units} unidades de
+              {" "}{selectedFollowupData.product_name} y autorizo actualizar su stock.
             </label>
             <button type="button" className={buttonClass}
               disabled={!receiptArmed || receiptBusy || loading}
-              onClick={receiveDemoFollowup}>
-              {receiptBusy ? "Registrando..." : "Confirmar recepción DEMO"}
+              onClick={receiveFollowup}>
+              {receiptBusy ? "Registrando..." : "Confirmar recepción"}
             </button>
           </>
         )}
@@ -673,7 +806,7 @@ export default function MultiAgentPage() {
             <p>Unidades recibidas: {receiptResult.quantity}</p>
             <p>Stock anterior: {receiptResult.stockBefore ?? "Sin dato previo"}</p>
             <p>Stock actual: {receiptResult.stockAfter}</p>
-            <p>Referencia del movimiento generada por el backend: {receiptResult.reference}</p>
+            <p>Referencia de movimiento esperada: {receiptResult.reference}</p>
           </div>
         )}
       </section>

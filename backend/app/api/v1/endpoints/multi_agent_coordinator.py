@@ -3,10 +3,13 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_current_user
 from app.db.database import get_db
+from app.models.models import Product
+from app.api.v1.endpoints.replenishment import calculate_stock_rule
 from app.api.v1.endpoints.agent import (
     AgentChatRequest,
     AgentHistoryMessage,
@@ -30,6 +33,7 @@ class MultiAgentChatRequest(BaseModel):
     ] = "automatico"
     analysis_id: Optional[UUID] = None
     followup_id: Optional[UUID] = None
+    product_id: Optional[UUID] = None
     history: list[AgentHistoryMessage] = Field(default_factory=list, max_length=10)
 
 
@@ -66,6 +70,54 @@ async def multi_agent_chat(
 ):
     selected = select_agent(request.message, request.agent)
     history = [entry.model_dump() for entry in request.history]
+
+    # Cuando se selecciona un producto del catálogo, el Agente 1 utiliza una herramienta
+    # determinista de reglas de stock sobre el catálogo vigente.
+    # No atribuye a XGBoost predicciones que no existen.
+    if request.product_id is not None and selected in ("inventario", "colaboracion"):
+        product = await db.scalar(select(Product).where(
+            Product.id == request.product_id,
+            Product.company_id == user["company_id"],
+            Product.active.is_(True),
+        ))
+        if not product:
+            raise HTTPException(404, "Producto no encontrado")
+        recommendation = calculate_stock_rule(product)
+        inventory_answer = (
+            f"**{product.name}** (SKU: {product.sku})\n\n"
+            f"- Stock actual: **{recommendation['current_stock']}** unidades.\n"
+            f"- Stock mínimo: **{recommendation['min_stock']}**.\n"
+            f"- Stock máximo: **{recommendation['max_stock']}**.\n"
+            f"- Reposición sugerida: **{recommendation['recommended_units']}** unidades.\n\n"
+            f"**Origen:** regla de stock del catálogo; **no es una predicción de XGBoost**."
+        )
+        if selected == "inventario":
+            return {
+                "success": True, "selected_agent": "inventario",
+                "response": inventory_answer,
+                "model": "herramienta_regla_stock_catalogo",
+                "tools_used": ["recomendacion_por_regla_stock"],
+                "recommendation": recommendation,
+            }
+        tracking_agent = get_replenishment_tracking_agent()
+        tracking = await tracking_agent.chat(
+            message=(
+                f"Consulta del usuario: {request.message}\n"
+                f"Resultado del agente de inventario: {inventory_answer}\n"
+                "Compara la propuesta con seguimientos existentes. "
+                "No afirmes que se creó una reposición si todavía no se confirmó."
+            ),
+            db=db, company_id=user["company_id"], history=history,
+        )
+        return {
+            "success": True, "selected_agent": "colaboracion",
+            "agents_used": ["inventario", "seguimiento"],
+            "response": tracking["response"],
+            "agent_results": {"inventario": inventory_answer, "seguimiento": tracking["response"]},
+            "tools_used": ["recomendacion_por_regla_stock"],
+            "followups_consulted": tracking["followups_consulted"],
+            "recommendation": recommendation,
+        }
 
     if selected == "preparar_accion":
         if request.followup_id is None:

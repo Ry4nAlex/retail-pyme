@@ -172,7 +172,13 @@ export const multiAgentService = {
   createFollowup: (data) =>
     api.post("/replenishments/", data),
 
-  receiveFollowup: (id, data) =>
+    receiveFollowup: (id, data) =>
     api.post(`/replenishments/${id}/receive`, data),
+
+  recommendProduct: (id) =>
+    api.get(`/replenishments/product-recommendation/${id}`),
+
+  createFromStockRule: (data) =>
+    api.post("/replenishments/from-stock-rule", data),
 };
 
