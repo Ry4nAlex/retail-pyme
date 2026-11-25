@@ -4,8 +4,9 @@ import { useAuth } from '../../hooks/useAuth'
 import {
   LayoutDashboard, Package, ShoppingCart, Tag,
   Brain, LogOut, Menu, X, TrendingUp, Database, UserCog,
-  Building2, ShieldCheck, PackageSearch,
+  Building2, ShieldCheck, PackageSearch, Bot,
 } from 'lucide-react'
+
 import { authService } from '../../services/api'
 const NAV = {
   superadmin: [
@@ -24,6 +25,7 @@ const NAV = {
 { to: '/ml/datasets', icon: Database, label: 'Datos históricos' },
 { to: '/ml/predictions', icon: Brain, label: 'Predicción de demanda' },
 { to: '/ml/stock-analysis', icon: PackageSearch, label: 'Análisis y reabastecimiento' },
+{ to: '/multi-agent', icon: Bot, label: 'Asistente multiagente' },
 { to: '/ml/evaluation', icon: Brain, label: 'Evaluación experimental' },
     { divider: true, label: 'Administracion' },
     { to: '/users', icon: UserCog, label: 'Usuarios' },
@@ -35,6 +37,7 @@ const NAV = {
     { to: '/inventory', icon: TrendingUp, label: 'Inventario' },
     { to: '/ml/predictions', icon: Brain, label: 'Predicción de demanda' },
 { to: '/ml/stock-analysis', icon: PackageSearch, label: 'Análisis y reabastecimiento' },
+{ to: '/multi-agent', icon: Bot, label: 'Asistente multiagente' },
   ],
 }
 

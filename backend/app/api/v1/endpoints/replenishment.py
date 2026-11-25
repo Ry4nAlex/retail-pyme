@@ -29,6 +29,7 @@ from app.services.replenishment_tracking_agent import (
     get_replenishment_tracking_agent,
 )
 
+from typing import Literal
 
 router = APIRouter(
     prefix="/replenishments",
@@ -36,7 +37,13 @@ router = APIRouter(
 )
 
 
-@router.get("/", response_model=list[ReplenishmentResponse])
+
+class ReplenishmentListResponse(ReplenishmentResponse):
+    product_name: str
+    product_sku: str
+
+
+@router.get("/", response_model=list[ReplenishmentListResponse])
 async def list_followups(
     status: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
@@ -47,8 +54,16 @@ async def list_followups(
     ):
         raise HTTPException(422, "Estado no válido")
 
-    query = select(ReplenishmentFollowup).where(
-        ReplenishmentFollowup.company_id == user["company_id"]
+    query = (
+        select(ReplenishmentFollowup, Product)
+        .join(
+            Product,
+            Product.id == ReplenishmentFollowup.product_id,
+        )
+        .where(
+            ReplenishmentFollowup.company_id == user["company_id"],
+            Product.company_id == user["company_id"],
+        )
     )
 
     if status:
@@ -61,7 +76,22 @@ async def list_followups(
     )
 
     result = await db.execute(query)
-    return result.scalars().all()
+
+    followups = []
+
+    for followup, product in result.all():
+        data = ReplenishmentResponse.model_validate(
+            followup,
+            from_attributes=True,
+        ).model_dump()
+
+        data["product_name"] = product.name
+        data["product_sku"] = product.sku
+
+        followups.append(data)
+
+    return followups
+
 
 
 @router.post(
@@ -425,3 +455,87 @@ async def preview_tracking_action(
             status_code=500,
             detail="No se pudo preparar la acción.",
         )
+
+
+# Confirmar una acción propuesta por el agente 2
+
+class ReplenishmentActionConfirmRequest(BaseModel):
+    followup_id: UUID
+    expected_status: Literal[
+        "pendiente", "pospuesto", "descartado", "recibido"
+    ]
+    proposed_status: Literal[
+        "pendiente", "pospuesto", "descartado"
+    ]
+    confirmed: Literal[True]
+    notes: Optional[str] = Field(
+        default=None,
+        max_length=500,
+    )
+
+
+@router.post(
+    "/action-confirm",
+    response_model=ReplenishmentResponse,
+)
+async def confirm_tracking_action(
+    request: ReplenishmentActionConfirmRequest,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    # Bloquear el seguimiento para evitar
+    # modificaciones simultáneas.
+    followup = await db.scalar(
+        select(ReplenishmentFollowup)
+        .where(
+            ReplenishmentFollowup.id == request.followup_id,
+            ReplenishmentFollowup.company_id == user["company_id"],
+        )
+        .with_for_update()
+    )
+
+    if followup is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Seguimiento no encontrado",
+        )
+
+    # Evitar ejecutar propuestas antiguas.
+    if followup.status != request.expected_status:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "El estado del seguimiento ha cambiado. "
+                "Debes generar una nueva propuesta."
+            ),
+        )
+
+    allowed_transitions = {
+        "pendiente": {"pospuesto", "descartado"},
+        "pospuesto": {"pendiente", "descartado"},
+        "descartado": set(),
+        "recibido": set(),
+    }
+
+    allowed = allowed_transitions.get(
+        followup.status, set()
+    )
+
+    if request.proposed_status not in allowed:
+        raise HTTPException(
+            status_code=409,
+            detail="Transición de estado no permitida",
+        )
+
+    # Ejecutar únicamente la acción confirmada.
+    followup.status = request.proposed_status
+
+    if request.notes is not None:
+        followup.notes = request.notes
+
+    followup.updated_at = datetime.utcnow()
+
+    await db.flush()
+    await db.refresh(followup)
+
+    return followup

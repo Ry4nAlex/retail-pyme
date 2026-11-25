@@ -149,3 +149,22 @@ export const agentService = {
   evaluateLanguage: (analysisId) =>
     api.post("/agent/evaluate-language", { analysis_id: analysisId }),
 };
+
+
+export const multiAgentService = {
+  chat: (data) =>
+    api.post("/multi-agent/chat", data),
+
+  previewAction: (data) =>
+    api.post("/multi-agent/chat", {
+      message: data.message,
+      agent: "preparar_accion",
+      followup_id: data.followup_id,
+    }),
+
+  confirmAction: (data) =>
+    api.post("/replenishments/action-confirm", data),
+
+  listFollowups: () =>
+    api.get("/replenishments/"),
+};

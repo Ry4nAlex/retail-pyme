@@ -25,15 +25,21 @@ router = APIRouter(
 )
 
 
+
 class MultiAgentChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=1000)
+
     agent: Literal[
-    "automatico",
-    "inventario",
-    "seguimiento",
-    "colaboracion"
-] = "automatico"
+        "automatico",
+        "inventario",
+        "seguimiento",
+        "colaboracion",
+        "preparar_accion",
+    ] = "automatico"
+
     analysis_id: Optional[UUID] = None
+    followup_id: Optional[UUID] = None
+
 
 
 
@@ -99,6 +105,33 @@ async def multi_agent_chat(
         request.message,
         request.agent,
     )
+
+
+    if selected == "preparar_accion":
+
+        if request.followup_id is None:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Debes proporcionar followup_id "
+                    "para preparar una acción."
+                ),
+            )
+
+        tracking_agent = get_replenishment_tracking_agent()
+
+        result = await tracking_agent.prepare_status_action(
+            message=request.message,
+            followup_id=request.followup_id,
+            db=db,
+            company_id=user["company_id"],
+        )
+
+        return {
+            "selected_agent": "seguimiento",
+            "operation": "preparar_accion",
+            **result,
+        }
 
     if selected == "colaboracion":
 

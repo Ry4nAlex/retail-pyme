@@ -9,6 +9,7 @@ import { DatasetsPage, PredictionsPage } from './pages/MLPages'
 import StockAnalysisPage from './pages/StockAnalysisPage'
 import ExperimentalEvaluationPage from './pages/ExperimentalEvaluationPage'
 import { ProductsPage, SalesPage, InventoryPage, CategoriesPage, UsersPage, CompaniesPage } from './pages/AppPages'
+import MultiAgentPage from './pages/MultiAgentPage'
 
 function Private({ children, adminOnly, superOnly, blockSuper }) {
   const { user } = useAuth()
@@ -41,6 +42,7 @@ function AppRoutes() {
       <Route path="/ml/datasets"  element={<Private adminOnly blockSuper><DatasetsPage /></Private>} />
       <Route path="/ml/predictions" element={<Private blockSuper><PredictionsPage /></Private>} />
       <Route path="/ml/stock-analysis" element={<Private blockSuper><StockAnalysisPage /></Private>} />
+      <Route path="/multi-agent" element={<Private blockSuper><MultiAgentPage /></Private>}/>
       <Route path="/ml/evaluation" element={<Private adminOnly blockSuper><ExperimentalEvaluationPage /></Private>
   }
 />      
