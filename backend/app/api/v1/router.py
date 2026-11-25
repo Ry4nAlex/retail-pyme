@@ -10,6 +10,9 @@ from app.api.v1.endpoints.misc import (
     dashboard_router, categories_router, customers_router, users_router,
     companies_router
 )
+from app.api.v1.endpoints.multi_agent_coordinator import (
+    router as multi_agent_router,
+)
 
 api_router = APIRouter()
 api_router.include_router(auth_router)
@@ -24,3 +27,4 @@ api_router.include_router(categories_router)
 api_router.include_router(customers_router)
 api_router.include_router(users_router)
 api_router.include_router(companies_router)
+api_router.include_router(multi_agent_router)
