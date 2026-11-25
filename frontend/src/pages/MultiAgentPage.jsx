@@ -1,4 +1,4 @@
-﻿
+
 import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import toast from "react-hot-toast";
@@ -6,6 +6,7 @@ import toast from "react-hot-toast";
 import {
   mlService,
   multiAgentService,
+  productsService,
 } from "../services/api";
 
 
@@ -61,9 +62,167 @@ export default function MultiAgentPage() {
   const [preview, setPreview] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  // Los medicamentos se crean desde el módulo Productos existente.
+  // Esta sección solo registra seguimientos recomendados por un análisis real.
+  const [recommendedProducts, setRecommendedProducts] = useState([]);
+  const [recommendationSku, setRecommendationSku] = useState("");
+  const [plannedUnits, setPlannedUnits] = useState("");
+  const [recommendationLoading, setRecommendationLoading] = useState(false);
+  const [selectedFollowupData, setSelectedFollowupData] = useState(null);
+  const [productStock, setProductStock] = useState(null);
+  const [receiptArmed, setReceiptArmed] = useState(false);
+  const [receiptBusy, setReceiptBusy] = useState(false);
+  const [receiptResult, setReceiptResult] = useState(null);
+
+
   const loadFollowups = async () => {
     const response = await multiAgentService.listFollowups();
-    setFollowups(response.data);
+    const list = Array.isArray(response.data) ? response.data : [];
+    setFollowups(list);
+    return list;
+  };
+
+  // Cargar las recomendaciones guardadas. Un producto solo es elegible
+  // si el análisis seleccionado recomienda reponer unidades (understock_units > 0).
+  useEffect(() => {
+    let active = true;
+    setRecommendedProducts([]);
+    setRecommendationSku("");
+    setPlannedUnits("");
+    if (!analysisId) return () => { active = false; };
+    setRecommendationLoading(true);
+    mlService.getAnalysis(analysisId)
+      .then(({ data }) => {
+        if (!active) return;
+        const products = Array.isArray(data?.result?.products)
+          ? data.result.products : [];
+        setRecommendedProducts(products.filter(p =>
+          Number(p.understock_units) > 0 && p.product_id
+        ));
+      })
+      .catch(() => {
+        if (active) toast.error("No se pudieron consultar las recomendaciones del análisis");
+      })
+      .finally(() => {
+        if (active) setRecommendationLoading(false);
+      });
+    return () => { active = false; };
+  }, [analysisId]);
+
+  // Mostrar stock actualizado desde el catálogo, no desde un análisis histórico.
+  useEffect(() => {
+    let active = true;
+    setProductStock(null);
+    const selected = followups.find(f => String(f.id) === String(followupId));
+    setSelectedFollowupData(selected || null);
+    if (!selected?.product_id) return () => { active = false; };
+    productsService.get(selected.product_id)
+      .then(({ data }) => { if (active) setProductStock(data); })
+      .catch(() => { if (active) setProductStock(null); });
+    return () => { active = false; };
+  }, [followupId, followups]);
+
+  useEffect(() => {
+    setReceiptResult(null);
+    setReceiptArmed(false);
+  }, [followupId]);
+
+  const createFollowupFromAnalysis = async (event) => {
+    event.preventDefault();
+    if (loading || !analysisId || !recommendationSku) return;
+    const recommendation = recommendedProducts.find(
+      p => String(p.product_id) === String(recommendationSku)
+    );
+    const qty = Number(plannedUnits);
+    if (!Number.isInteger(qty) || qty <= 0) {
+      toast.error("Indica una cantidad entera mayor que cero");
+      return;
+    }
+    if (!recommendation) return;
+    setLoading(true);
+    try {
+      // La API de productos usa UUID; el análisis ML usa SKU.
+      // Buscamos la coincidencia exacta para evitar crear un seguimiento incorrecto.
+      const { data: catalog } = await productsService.list({
+        search: recommendationSku,
+        page: 1,
+        size: 100,
+      });
+      const product = (catalog?.items || []).find(p =>
+        String(p.sku).toLowerCase() === String(recommendationSku).toLowerCase()
+      );
+      if (!product) {
+        toast.error("Ese SKU no existe en Productos. Regístralo primero en el módulo Productos.");
+        return;
+      }
+      const { data } = await multiAgentService.createFollowup({
+        analysis_id: analysisId,
+        product_id: product.id,
+        planned_units: qty,
+        notes: "Seguimiento creado desde el asistente multiagente",
+      });
+      const updated = await loadFollowups();
+      const created = updated.find(f => f.id === data.id);
+      setFollowupId(data.id);
+      setPreview(null);
+      toast.success(`Seguimiento creado para ${created?.product_name || product.name}`);
+    } catch (error) {
+      const detail = error.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : "No se pudo crear el seguimiento");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const receiveDemoFollowup = async () => {
+    const selected = selectedFollowupData;
+    if (!selected || receiptBusy || !receiptArmed) return;
+    if (!String(selected.product_sku || "").toUpperCase().startsWith("DEMO-")) {
+      toast.error("La recepción demostrativa solo está permitida para SKU que comiencen con DEMO-");
+      return;
+    }
+    if (selected.status !== "pendiente" || Number(selected.received_units) !== 0) {
+      toast.error("Solo puedes recibir un seguimiento pendiente sin unidades recibidas");
+      return;
+    }
+    const qty = Number(selected.planned_units);
+    if (!Number.isInteger(qty) || qty <= 0) return;
+    const confirmed = window.confirm(
+      `Confirmar recepción DEMO de ${qty} unidades de ${selected.product_name}? ` +
+      "Esta operación modificará realmente el stock del producto ficticio en Supabase."
+    );
+    if (!confirmed) return;
+    setReceiptBusy(true);
+    const stockBefore = productStock?.stock ?? null;
+    try {
+      const { data } = await multiAgentService.receiveFollowup(selected.id, {
+        received_units: qty,
+        confirmed: true,
+        notes: "Recepción de demostración confirmada desde React",
+      });
+      const [productResponse] = await Promise.all([
+        productsService.get(selected.product_id),
+        loadFollowups(),
+      ]);
+      const stockAfter = productResponse.data.stock;
+      setProductStock(productResponse.data);
+      setReceiptResult({
+        stockBefore,
+        stockAfter,
+        quantity: qty,
+        followupId: data.id,
+        status: data.status,
+        reference: `REPL-${data.id}`,
+      });
+      setReceiptArmed(false);
+      toast.success("Recepción DEMO registrada. Stock actualizado.");
+    } catch (error) {
+      const detail = error.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : "No se pudo confirmar la recepción");
+      setReceiptArmed(false);
+    } finally {
+      setReceiptBusy(false);
+    }
   };
 
   useEffect(() => {
@@ -320,6 +479,48 @@ export default function MultiAgentPage() {
       </section>
 
       <section className="rounded-xl border bg-white p-5 space-y-4">
+        <h2 className="font-semibold text-slate-900">Registrar seguimiento desde un análisis</h2>
+        <p className="text-sm text-slate-600">
+          Primero crea el medicamento en <strong>Productos</strong> y analiza sus ventas en
+          <strong> Análisis y reabastecimiento</strong>. Después selecciona aquí el mismo
+          análisis y un producto recomendado. No se crean productos ni análisis ficticios automáticamente.
+        </p>
+        <form onSubmit={createFollowupFromAnalysis} className="space-y-3">
+          <label className="block space-y-1 text-sm">
+            <span>Producto recomendado en el análisis seleccionado</span>
+            <select className={inputClass} value={recommendationSku}
+              onChange={e => {
+                setRecommendationSku(e.target.value);
+                const rec = recommendedProducts.find(p => String(p.product_id) === e.target.value);
+                setPlannedUnits(rec ? String(Math.round(Number(rec.understock_units))) : "");
+              }}>
+              <option value="">Seleccionar medicamento</option>
+              {recommendedProducts.map(p => (
+                <option key={String(p.product_id)} value={String(p.product_id)}>
+                  {`${p.product_name || p.product_id} · ${p.product_id} · ${p.understock_units} recomendadas`}
+                </option>
+              ))}
+            </select>
+          </label>
+          {!recommendationLoading && analysisId && recommendedProducts.length === 0 && (
+            <p className="text-sm text-amber-700">
+              El análisis seleccionado no contiene productos con recomendación positiva de reposición.
+              Ejecuta un nuevo análisis con las ventas del producto DEMO.
+            </p>
+          )}
+          <label className="block space-y-1 text-sm">
+            <span>Unidades que se planifica reponer</span>
+            <input className={inputClass} type="number" min="1" step="1"
+              value={plannedUnits} onChange={e => setPlannedUnits(e.target.value)} />
+          </label>
+          <button type="submit" className={buttonClass}
+            disabled={loading || recommendationLoading || !recommendationSku}>
+            Registrar seguimiento pendiente
+          </button>
+        </form>
+      </section>
+
+      <section className="rounded-xl border bg-white p-5 space-y-4">
         <h2 className="font-semibold text-slate-900">
           Seguimiento de reposiciones
         </h2>
@@ -425,6 +626,54 @@ export default function MultiAgentPage() {
                 Cancelar
               </button>
             </div>
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-xl border bg-white p-5 space-y-4">
+        <h2 className="font-semibold text-slate-900">Recepción de reabastecimiento</h2>
+        <p className="text-sm text-slate-600">
+          Utiliza el seguimiento seleccionado arriba. Por seguridad, esta demostración
+          solo permite confirmar recepciones de productos con SKU <strong>DEMO-</strong>.
+          La operación sí actualizará el stock del producto ficticio en la base de datos.
+        </p>
+        {selectedFollowupData ? (
+          <div className="space-y-2 rounded-lg bg-slate-50 p-4 text-sm">
+            <p><strong>Medicamento:</strong> {selectedFollowupData.product_name}</p>
+            <p><strong>SKU:</strong> {selectedFollowupData.product_sku}</p>
+            <p><strong>Estado:</strong> {selectedFollowupData.status}</p>
+            <p><strong>Planificadas:</strong> {selectedFollowupData.planned_units}</p>
+            <p><strong>Recibidas:</strong> {selectedFollowupData.received_units}</p>
+            <p><strong>Stock actual del catálogo:</strong> {productStock?.stock ?? "Cargando..."}</p>
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500">Selecciona un seguimiento en la sección anterior.</p>
+        )}
+        {selectedFollowupData?.status === "pendiente" &&
+         String(selectedFollowupData?.product_sku || "").toUpperCase().startsWith("DEMO-") &&
+         Number(selectedFollowupData.received_units) === 0 && (
+          <>
+            <label className="flex items-start gap-2 text-sm">
+              <input type="checkbox" checked={receiptArmed}
+                onChange={e => setReceiptArmed(e.target.checked)} />
+              Confirmo que se trata de un producto ficticio y deseo registrar la recepción
+              de {selectedFollowupData.planned_units} unidades.
+            </label>
+            <button type="button" className={buttonClass}
+              disabled={!receiptArmed || receiptBusy || loading}
+              onClick={receiveDemoFollowup}>
+              {receiptBusy ? "Registrando..." : "Confirmar recepción DEMO"}
+            </button>
+          </>
+        )}
+        {receiptResult && (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm space-y-1">
+            <p className="font-semibold">Recepción registrada correctamente</p>
+            <p>Estado: {receiptResult.status}</p>
+            <p>Unidades recibidas: {receiptResult.quantity}</p>
+            <p>Stock anterior: {receiptResult.stockBefore ?? "Sin dato previo"}</p>
+            <p>Stock actual: {receiptResult.stockAfter}</p>
+            <p>Referencia del movimiento generada por el backend: {receiptResult.reference}</p>
           </div>
         )}
       </section>

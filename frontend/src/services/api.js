@@ -151,6 +151,7 @@ export const agentService = {
 };
 
 
+
 export const multiAgentService = {
   chat: (data) =>
     api.post("/multi-agent/chat", data),
@@ -167,4 +168,11 @@ export const multiAgentService = {
 
   listFollowups: () =>
     api.get("/replenishments/"),
+
+  createFollowup: (data) =>
+    api.post("/replenishments/", data),
+
+  receiveFollowup: (id, data) =>
+    api.post(`/replenishments/${id}/receive`, data),
 };
+
