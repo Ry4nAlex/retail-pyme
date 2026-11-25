@@ -23,6 +23,22 @@ from app.schemas.schemas import (
     ReplenishmentStatusUpdate,
 )
 
+from datetime import datetime
+
+from app.models.models import (
+    Product,
+    StockAnalysis,
+    InventoryMovement,
+    ReplenishmentFollowup,
+)
+
+from app.schemas.schemas import (
+    ReplenishmentCreate,
+    ReplenishmentResponse,
+    ReplenishmentStatusUpdate,
+    ReplenishmentReceive,
+)
+
 router = APIRouter(
     prefix="/replenishments",
     tags=["Seguimiento de reabastecimiento"],
@@ -224,6 +240,121 @@ async def update_followup_status(
     if data.notes is not None:
         followup.notes = data.notes
 
+    await db.flush()
+    await db.refresh(followup)
+
+    return followup
+
+
+@router.post(
+    "/{followup_id}/receive",
+    response_model=ReplenishmentResponse,
+)
+async def confirm_replenishment_receipt(
+    followup_id: UUID,
+    data: ReplenishmentReceive,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    company_id = user["company_id"]
+
+    # Bloquear el seguimiento durante la recepción.
+    followup = await db.scalar(
+        select(ReplenishmentFollowup)
+        .where(
+            ReplenishmentFollowup.id == followup_id,
+            ReplenishmentFollowup.company_id == company_id,
+        )
+        .with_for_update()
+    )
+
+    if not followup:
+        raise HTTPException(
+            status_code=404,
+            detail="Seguimiento no encontrado",
+        )
+
+    # Impedir recepciones duplicadas o no autorizadas
+    # por el estado del seguimiento.
+    if followup.status != "pendiente":
+        raise HTTPException(
+            status_code=409,
+            detail="Solo se pueden recibir reposiciones pendientes",
+        )
+
+    if followup.received_units != 0:
+        raise HTTPException(
+            status_code=409,
+            detail="Este seguimiento ya registra unidades recibidas",
+        )
+
+    if data.received_units != followup.planned_units:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "La cantidad recibida debe coincidir con "
+                "la cantidad planificada"
+            ),
+        )
+
+    # Bloquear el producto para evitar actualizaciones
+    # simultáneas sobre su stock.
+    product = await db.scalar(
+        select(Product)
+        .where(
+            Product.id == followup.product_id,
+            Product.company_id == company_id,
+            Product.active.is_(True),
+        )
+        .with_for_update()
+    )
+
+    if not product:
+        raise HTTPException(
+            status_code=404,
+            detail="Producto no encontrado o inactivo",
+        )
+
+    stock_before = product.stock
+
+    if stock_before is None or stock_before < 0:
+        raise HTTPException(
+            status_code=409,
+            detail="El producto tiene un stock inválido",
+        )
+
+    stock_after = stock_before + data.received_units
+
+    # Actualizar las existencias.
+    product.stock = stock_after
+    product.updated_at = datetime.utcnow()
+
+    # Registrar el movimiento de inventario.
+    movement = InventoryMovement(
+        company_id=company_id,
+        product_id=product.id,
+        type="in",
+        quantity=data.received_units,
+        stock_before=stock_before,
+        stock_after=stock_after,
+        reference=f"REPL-{followup.id}",
+        reason="Recepción confirmada de reabastecimiento",
+    )
+
+    db.add(movement)
+
+    # Actualizar el seguimiento.
+    followup.received_units = data.received_units
+    followup.status = "recibido"
+    followup.confirmed_by = user["user_id"]
+    followup.received_at = datetime.utcnow()
+    followup.updated_at = datetime.utcnow()
+
+    if data.notes is not None:
+        followup.notes = data.notes
+
+    # Los cambios se confirman conjuntamente
+    # mediante la transacción de get_db.
     await db.flush()
     await db.refresh(followup)
 

@@ -439,3 +439,9 @@ class ReplenishmentResponse(BaseModel):
 class ReplenishmentStatusUpdate(BaseModel):
     status: Literal["pendiente", "pospuesto", "descartado"]
     notes: Optional[str] = None
+
+
+class ReplenishmentReceive(BaseModel):
+    received_units: int = Field(gt=0)
+    confirmed: Literal[True]
+    notes: Optional[str] = None
