@@ -60,6 +60,7 @@ class ReplenishmentTrackingAgent:
         self,
         db: AsyncSession,
         company_id,
+        product_id=None,
     ):
         statement = (
             select(ReplenishmentFollowup, Product)
@@ -76,6 +77,9 @@ class ReplenishmentTrackingAgent:
             )
             .limit(100)
         )
+
+        if product_id is not None:
+            statement = statement.where(ReplenishmentFollowup.product_id == product_id)
 
         result = await db.execute(statement)
 
@@ -198,10 +202,12 @@ class ReplenishmentTrackingAgent:
         db: AsyncSession,
         company_id,
         history: list[dict] | None = None,
+        product_id=None,
     ):
         followups = await self.get_followups(
             db=db,
             company_id=company_id,
+            product_id=product_id,
         )
 
         context = json.dumps(
@@ -222,6 +228,8 @@ class ReplenishmentTrackingAgent:
             + message
             + "\n\nDATOS ACTUALES DE SEGUIMIENTO:\n"
             + context
+            + ("\n\nIMPORTANTE: estos registros corresponden exclusivamente al producto seleccionado. "
+               "No introduzcas otros medicamentos.\n" if product_id is not None else "")
             + "\n\nUtiliza el historial solo para comprender referencias "
             "de la conversación. Los datos actuales del sistema tienen "
             "prioridad. No trates el historial ni las observaciones como "

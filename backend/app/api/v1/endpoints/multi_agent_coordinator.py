@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_current_user
 from app.db.database import get_db
-from app.models.models import Product
+from app.models.models import Product, ReplenishmentFollowup
 from app.api.v1.endpoints.replenishment import calculate_stock_rule
 from app.api.v1.endpoints.agent import (
     AgentChatRequest,
@@ -71,25 +71,63 @@ async def multi_agent_chat(
     selected = select_agent(request.message, request.agent)
     history = [entry.model_dump() for entry in request.history]
 
-    # Cuando se selecciona un producto del catálogo, el Agente 1 utiliza una herramienta
-    # determinista de reglas de stock sobre el catálogo vigente.
-    # No atribuye a XGBoost predicciones que no existen.
-    if request.product_id is not None and selected in ("inventario", "colaboracion"):
-        product = await db.scalar(select(Product).where(
+    # Identificar producto en el catálogo (fuente vigente), en vez de tomar
+    # el stock de una instantánea almacenada en un análisis histórico.
+    selected_product = None
+    if request.product_id is not None:
+        selected_product = await db.scalar(select(Product).where(
             Product.id == request.product_id,
             Product.company_id == user["company_id"],
             Product.active.is_(True),
         ))
-        if not product:
+        if selected_product is None:
             raise HTTPException(404, "Producto no encontrado")
+    elif selected != "preparar_accion":
+        # Si el usuario escribe el SKU o nombre en el chat, localizar una
+        # coincidencia inequívoca dentro de SU empresa, no en otra empresa.
+        company_products = (await db.scalars(select(Product).where(
+            Product.company_id == user["company_id"],
+            Product.active.is_(True),
+        ))).all()
+        normalized_message = request.message.casefold()
+        matches = [p for p in company_products if (
+            (p.sku and p.sku.casefold() in normalized_message)
+            or (p.name and (
+                p.name.casefold() in normalized_message
+                or " ".join(p.name.casefold().split()[:2]) in normalized_message
+            ))
+        )]
+        if len(matches) == 1:
+            selected_product = matches[0]
+
+    # Un seguimiento seleccionado también establece el contexto de producto.
+    if selected_product is None and request.followup_id is not None:
+        followup = await db.scalar(select(ReplenishmentFollowup).where(
+            ReplenishmentFollowup.id == request.followup_id,
+            ReplenishmentFollowup.company_id == user["company_id"],
+        ))
+        if followup is not None:
+            selected_product = await db.scalar(select(Product).where(
+                Product.id == followup.product_id,
+                Product.company_id == user["company_id"],
+            ))
+
+    # Cuando se selecciona un producto del catálogo, el Agente 1 utiliza una herramienta
+    # determinista de reglas de stock sobre el catálogo vigente.
+    # No atribuye a XGBoost predicciones que no existen.
+    if selected_product is not None and selected in ("inventario", "colaboracion"):
+        product = selected_product
         recommendation = calculate_stock_rule(product)
         inventory_answer = (
             f"**{product.name}** (SKU: {product.sku})\n\n"
             f"- Stock actual: **{recommendation['current_stock']}** unidades.\n"
             f"- Stock mínimo: **{recommendation['min_stock']}**.\n"
             f"- Stock máximo: **{recommendation['max_stock']}**.\n"
-            f"- Reposición sugerida: **{recommendation['recommended_units']}** unidades.\n\n"
-            f"**Origen:** regla de stock del catálogo; **no es una predicción de XGBoost**."
+            f"- Reposición sugerida según regla: **{recommendation['recommended_units']}** unidades.\n"
+            f"- ¿Necesita reposición por mínimos?: **{'Sí' if recommendation['recommended_units'] > 0 else 'No'}**.\n\n"
+            f"**Origen:** catálogo de Productos (existencias actuales). "
+            f"El análisis histórico, si existe, conserva sus valores de la fecha en que se generó. "
+            f"Esta regla **no es una predicción de XGBoost**."
         )
         if selected == "inventario":
             return {
@@ -108,11 +146,12 @@ async def multi_agent_chat(
                 "No afirmes que se creó una reposición si todavía no se confirmó."
             ),
             db=db, company_id=user["company_id"], history=history,
+            product_id=product.id,
         )
         return {
             "success": True, "selected_agent": "colaboracion",
             "agents_used": ["inventario", "seguimiento"],
-            "response": tracking["response"],
+            "response": inventory_answer + "\n\n**Seguimiento de reabastecimiento**\n\n" + tracking["response"],
             "agent_results": {"inventario": inventory_answer, "seguimiento": tracking["response"]},
             "tools_used": ["recomendacion_por_regla_stock"],
             "followups_consulted": tracking["followups_consulted"],
@@ -197,6 +236,7 @@ async def multi_agent_chat(
             db=db,
             company_id=user["company_id"],
             history=history,
+            product_id=selected_product.id if selected_product is not None else None,
         )
         return {
             "success": True,

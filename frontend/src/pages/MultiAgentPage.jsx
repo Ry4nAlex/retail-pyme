@@ -317,8 +317,8 @@ export default function MultiAgentPage() {
     const question = message.trim();
     if (!question || loading) return;
 
-    if (agent === "colaboracion" && !analysisId) {
-      toast.error("Selecciona un análisis para la colaboración");
+    if (agent === "colaboracion" && !analysisId && !selectedCatalogId && !followupId) {
+      toast.error("Selecciona un análisis, medicamento o seguimiento para la colaboración");
       return;
     }
 
@@ -334,6 +334,8 @@ export default function MultiAgentPage() {
         message: question,
         agent,
         analysis_id: analysisId || null,
+        product_id: agent === "seguimiento" ? null : (selectedCatalogId || null),
+        followup_id: followupId || null,
         history: messages.slice(-10).map(item => ({
           role: item.role,
           content: item.text.slice(0, 1500),
@@ -499,6 +501,15 @@ export default function MultiAgentPage() {
             </select>
           </label>
         </div>
+
+        <p className="text-xs text-slate-600">
+          {selectedCatalogId
+            ? "Consulta vinculada al producto seleccionado en «Del agente 1 al agente 2». Se usa su stock actual de Productos."
+            : followupId
+              ? "Consulta vinculada al producto del seguimiento seleccionado."
+              : "Para consultar el stock vigente de un medicamento concreto, selecciónalo en el buscador inferior o escribe su SKU exacto."}
+          {analysisId ? " Los análisis históricos conservan el stock registrado en su fecha." : ""}
+        </p>
 
         <div className="min-h-48 max-h-96 space-y-3 overflow-y-auto rounded-lg bg-slate-50 p-4">
           {messages.length === 0 && (
