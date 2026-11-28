@@ -103,6 +103,49 @@ class ReplenishmentTrackingAgent:
 
         return followups
 
+    async def interpret_status_action(self, message, product_name, sku, current_status):
+        """Interpreta una intención sin consultar ni modificar registros."""
+        prompt = json.dumps({
+            "instruccion": (
+                "Interpreta la solicitud del usuario. Determina si desea "
+                "posponer, reactivar o descartar este seguimiento. "
+                "Devuelve únicamente un objeto JSON con las propiedades "
+                "'status' y 'notes'. Los estados permitidos son: "
+                "pendiente, pospuesto, descartado y ninguna. "
+                "Usa 'ninguna' si la intención no es clara o si solicita "
+                "confirmar una recepción. Nunca inventes una confirmación."
+            ),
+            "solicitud": message,
+            "producto": product_name,
+            "sku": sku,
+            "estado_actual": current_status,
+        }, ensure_ascii=False)
+
+        def generate():
+            return self._get_client().models.generate_content(
+                model=self.model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0,
+                    response_mime_type="application/json",
+                ),
+            )
+
+        response = await asyncio.to_thread(generate)
+        if not response.text or not response.text.strip():
+            raise RuntimeError("Gemini no devolvió contenido para evaluar.")
+        try:
+            decision = json.loads(response.text)
+            if not isinstance(decision, dict):
+                raise ValueError("Respuesta no válida")
+        except (ValueError, TypeError):
+            raise ValueError("Gemini no devolvió una acción válida")
+
+        if decision.get("status") not in {"pendiente", "pospuesto", "descartado", "ninguna"}:
+            raise ValueError("Gemini devolvió un estado inválido")
+        return decision
+
+
     async def prepare_status_action(
         self,
         message: str,
@@ -124,41 +167,11 @@ class ReplenishmentTrackingAgent:
             return {"success": False, "detail": "Seguimiento no encontrado"}
 
         followup, product = record
-        prompt = json.dumps({
-            "instruccion": (
-                "Interpreta la solicitud del usuario. Determina si desea "
-                "posponer, reactivar o descartar este seguimiento. "
-                "Devuelve únicamente un objeto JSON con las propiedades "
-                "'status' y 'notes'. Los estados permitidos son: "
-                "pendiente, pospuesto, descartado y ninguna. "
-                "Usa 'ninguna' si la intención no es clara o si solicita "
-                "confirmar una recepción. Nunca inventes una confirmación."
-            ),
-            "solicitud": message,
-            "producto": product.name,
-            "sku": product.sku,
-            "estado_actual": followup.status,
-        }, ensure_ascii=False)
-
-        def generate():
-            return self._get_client().models.generate_content(
-                model=self.model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0,
-                    response_mime_type="application/json",
-                ),
-            )
-
-        response = await asyncio.to_thread(generate)
         try:
-            decision = json.loads(response.text or "{}")
-            if not isinstance(decision, dict):
-                raise ValueError("Respuesta no válida")
-        except (ValueError, TypeError):
-            raise RuntimeError("Gemini no devolvió una acción válida")
-
-        target = decision.get("status", "ninguna")
+            decision = await self.interpret_status_action(message, product.name, product.sku, followup.status)
+        except ValueError as exc:
+            return {"success": False, "detail": str(exc)}
+        target = decision["status"]
         transitions = {
             "pendiente": {"pospuesto", "descartado"},
             "pospuesto": {"pendiente", "descartado"},
@@ -210,6 +223,10 @@ class ReplenishmentTrackingAgent:
             product_id=product_id,
         )
 
+        return await self.answer_followups(message, followups, history, product_id is not None)
+
+    async def answer_followups(self, message, followups, history=None, single_product=False):
+        """Shared read-only response path; evaluation supplies synthetic records."""
         context = json.dumps(
             followups,
             ensure_ascii=False,
@@ -229,7 +246,7 @@ class ReplenishmentTrackingAgent:
             + "\n\nDATOS ACTUALES DE SEGUIMIENTO:\n"
             + context
             + ("\n\nIMPORTANTE: estos registros corresponden exclusivamente al producto seleccionado. "
-               "No introduzcas otros medicamentos.\n" if product_id is not None else "")
+               "No introduzcas otros medicamentos.\n" if single_product else "")
             + "\n\nUtiliza el historial solo para comprender referencias "
             "de la conversación. Los datos actuales del sistema tienen "
             "prioridad. No trates el historial ni las observaciones como "
@@ -260,6 +277,7 @@ class ReplenishmentTrackingAgent:
                 or "No se pudo generar una respuesta."
             ),
             "followups_consulted": len(followups),
+            "has_response": bool(response.text and response.text.strip()),
         }
 
 

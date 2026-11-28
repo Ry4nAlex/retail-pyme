@@ -1,5 +1,6 @@
 from typing import Literal, Optional
 import re
+import unicodedata
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -38,29 +39,94 @@ class MultiAgentChatRequest(BaseModel):
     history: list[AgentHistoryMessage] = Field(default_factory=list, max_length=10)
 
 
+
 def select_agent(message: str, requested: str) -> str:
     if requested != "automatico":
         return requested
 
-    text = message.lower()
+    text = unicodedata.normalize("NFD", message.lower())
+    text = "".join(
+        char for char in text
+        if unicodedata.category(char) != "Mn"
+    )
+
     inventory_keywords = (
-        "inventario", "stock", "demanda", "predicción", "predecir",
-        "reabastecer", "reabastecimiento", "recomendación",
-        "recomendaciones", "priorizar", "medicamentos",
+        "inventario",
+        "stock",
+        "demanda",
+        "prediccion",
+        "predecir",
+        "pronostico",
+        "reabastecer",
+        "recomendacion",
+        "priorizar",
+        "sobrestock",
+        "faltantes",
+        "excedentes",
+        "cobertura",
+        "deficit",
+        "baja rotacion",
+        "necesitan reposicion",
+        "requieren reposicion",
+        "reponer",
     )
+
     tracking_keywords = (
-        "seguimiento", "pendiente", "pendientes", "pospuesto",
-        "descartado", "recibí", "recibido", "recibieron",
-        "recepción", "entrega", "reposición realizada",
-        "reposición completada",
+        "seguimiento",
+        "pendiente",
+        "pospuesto",
+        "posponer",
+        "aplazar",
+        "reactivar",
+        "descartar",
+        "descartado",
+        "recibi",
+        "recibido",
+        "recibieron",
+        "recepcion",
+        "entrega",
+        "reposicion realizada",
+        "reposicion completada",
+        "reposicion registrada",
+        "reposiciones registradas",
+        "reposiciones pendientes",
+        "reabastecimientos registrados",
+        "unidades planificadas",
+        "unidades recibidas",
     )
-    requires_inventory = any(word in text for word in inventory_keywords)
-    requires_tracking = any(word in text for word in tracking_keywords)
+
+    action_keywords = (
+        "posponer",
+        "aplazar",
+        "reactivar",
+        "descartar",
+        "confirmar recepcion",
+        "marcar como recibido",
+    )
+
+    requires_inventory = any(
+        word in text for word in inventory_keywords
+    )
+
+    requires_tracking = any(
+        word in text for word in tracking_keywords
+    )
+
+    requires_action = any(
+        word in text for word in action_keywords
+    )
+
+    if requires_action:
+        return "seguimiento"
+
     if requires_inventory and requires_tracking:
         return "colaboracion"
+
     if requires_tracking:
         return "seguimiento"
+
     return "inventario"
+
 
 
 @router.post("/chat")

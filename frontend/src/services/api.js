@@ -146,8 +146,15 @@ export const agentService = {
   evaluate: (analysisId) =>
     api.post("/agent/evaluate", { analysis_id: analysisId }),
 
-  evaluateLanguage: (analysisId) =>
-    api.post("/agent/evaluate-language", { analysis_id: analysisId }),
+  evaluateLanguage: (analysisId, options = {}) =>
+    api.post("/agent/evaluate-language", {
+      analysis_id: analysisId,
+      case_id: options.caseId ?? null,
+      list_only: options.listOnly ?? false,
+    }, {
+      signal: options.signal,
+      timeout: 90000
+    }),
 };
 
 

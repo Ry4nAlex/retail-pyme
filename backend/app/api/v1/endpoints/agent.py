@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from typing import Optional
 from uuid import UUID
 
@@ -10,6 +12,8 @@ from app.core.security import get_current_user, require_admin
 from app.db.database import get_db
 from app.models.models import StockAnalysis
 from app.services.inventory_agent import get_inventory_agent
+from app.services.replenishment_tracking_agent import get_replenishment_tracking_agent
+from app.services.agent_evaluation import build_cases, matches_tool, provider_error, response_payload, parse_tracking_answer
 
 
 router = APIRouter(
@@ -204,6 +208,8 @@ async def execute_agent_action(
 
 class AgentEvaluationRequest(BaseModel):
     analysis_id: UUID
+    case_id: Optional[str] = None
+    list_only: bool = False
 
 
 @router.post("/evaluate")
@@ -530,150 +536,64 @@ async def evaluate_agent_language(
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_admin),
 ):
-    """
-    Evalúa la capacidad de Gemini para interpretar consultas en lenguaje
-    natural y seleccionar la herramienta controlada esperada.
-
-    Esta evaluación consume Gemini, se ejecuta únicamente bajo demanda
-    y no modifica el inventario.
-    """
-    context = await _get_analysis_context(
-        request.analysis_id,
-        db,
-        current_user["company_id"],
-    )
-
+    """Evalúa la interpretación real sin ejecutar acciones sobre inventario."""
+    context = await _get_analysis_context(request.analysis_id, db, current_user["company_id"])
     agent = get_inventory_agent()
-    products = context.get("products", []) or []
-
-    cases = [
-        {
-            "id": "low_stock_intent",
-            "name": "Interpretación de consulta de bajo stock",
-            "prompt": "¿Qué productos necesitan reabastecimiento por bajo stock?",
-            "expected_tool": "listar_productos_bajo_stock",
-        },
-        {
-            "id": "overstock_intent",
-            "name": "Interpretación de consulta de sobrestock",
-            "prompt": "¿Qué productos presentan sobrestock?",
-            "expected_tool": "listar_productos_sobrestock",
-        },
-        {
-            "id": "summary_intent",
-            "name": "Interpretación de resumen de inventario",
-            "prompt": "Dame un resumen general del estado del inventario.",
-            "expected_tool": "resumir_inventario",
-        },
-        {
-            "id": "prioritization_intent",
-            "name": "Interpretación de priorización de reabastecimiento",
-            "prompt": "Prioriza los 5 productos que requieren reabastecimiento.",
-            "expected_tool": "priorizar_reabastecimiento",
-        },
-    ]
-
-    # Se incorpora una consulta dependiente de un producto real del análisis.
-    sample = next(
-        (
-            product
-            for product in products
-            if product.get("product_name")
-        ),
-        None,
-    )
-
-    if sample:
-        product_name = sample["product_name"]
-
-        cases.append({
-            "id": "recommendation_intent",
-            "name": "Interpretación de recomendación de reabastecimiento",
-            "prompt": (
-                f"¿Cuál es la recomendación de reabastecimiento "
-                f"para {product_name}?"
-            ),
-            "expected_tool": "recomendar_reabastecimiento",
-        })
-
+    tracker = get_replenishment_tracking_agent()
+    cases = build_cases(context)
+    def pending(case, detail="Pendiente de evaluación."):
+        return {**case, "selected_tools": [], "selected_calls": [], "passed": None, "detail": detail}
+    if request.list_only:
+        return response_payload(request.analysis_id, agent.model, [pending(c) for c in cases])
+    if request.case_id:
+        cases = [c for c in cases if c["id"] == request.case_id]
+        if not cases:
+            raise HTTPException(status_code=404, detail="Caso de evaluación no encontrado")
     results = []
-
-    for index, case in enumerate(cases):
+    blocked = False
+    for case in cases:
+        if blocked:
+            results.append(pending(case, "Omitido por error previo del proveedor."))
+            continue
+        item = pending(case)
         try:
-            selected_tools = agent.select_tool_for_evaluation(case["prompt"])
-            expected_tool = case["expected_tool"]
-            passed = expected_tool in selected_tools
-            results.append({
-                "id": case["id"],
-                "name": case["name"],
-                "prompt": case["prompt"],
-                "expected_tool": expected_tool,
-                "selected_tools": selected_tools,
-                "passed": passed,
-                "response": None,
-                "detail": (
-                    f"Herramienta esperada: {expected_tool}; "
-                    f"seleccionadas: {', '.join(selected_tools) if selected_tools else 'ninguna'}."
-                ),
-            })
-        except RuntimeError as exc:
-            reason = str(exc)
-            print(f"[EVALUACION GEMINI] {type(exc).__name__}: {reason}", flush=True)
-            results.append({
-                "id": case["id"],
-                "name": case["name"],
-                "prompt": case["prompt"],
-                "expected_tool": case["expected_tool"],
-                "selected_tools": [],
-                "passed": None,
-                "response": None,
-                "detail": f"No evaluado: {reason}",
-            })
-            # Si se agotó la cuota, no gastar más solicitudes.
-            if (
-                "límite de consultas" in reason
-                or "no está disponible temporalmente" in reason
-                or "No se pudo completar la consulta" in reason
-            ):
-                for pending in cases[index + 1:]:
-                    results.append({
-                        "id": pending["id"],
-                        "name": pending["name"],
-                        "prompt": pending["prompt"],
-                        "expected_tool": pending["expected_tool"],
-                        "selected_tools": [],
-                        "passed": None,
-                        "response": None,
-                        "detail": "No evaluado: servicio de Gemini no disponible; solicitud omitida para evitar reintentos.",
-                    })
-                break
-
-    evaluated = [item for item in results if item["passed"] is not None]
-    passed = sum(item["passed"] is True for item in evaluated)
-    failed = sum(item["passed"] is False for item in evaluated)
-    not_evaluated = len(results) - len(evaluated)
-    compliance_pct = round(passed / len(evaluated) * 100, 2) if evaluated else None
-
-    return {
-        "analysis_id": str(request.analysis_id),
-        "evaluation_type": "natural_language_tool_selection",
-        "uses_gemini": True,
-        "modifies_inventory": False,
-        "summary": {
-            "total_cases": len(results),
-            "evaluated_cases": len(evaluated),
-            "not_evaluated": not_evaluated,
-            "passed": passed,
-            "failed": failed,
-            "compliance_pct": compliance_pct,
-        },
-        "cases": results,
-        "note": (
-            "Solo se calcula el cumplimiento sobre las respuestas efectivamente "
-            "evaluadas. Las solicitudes bloqueadas por Gemini no cuentan como fallos "
-            "de interpretación. No modifica el inventario."
-        ),
-    }
+            if case["agent"] == "inventario":
+                calls = await asyncio.to_thread(agent.select_tool_for_evaluation, case["prompt"])
+                item.update(selected_calls=calls, selected_tools=[c["name"] for c in calls],
+                            passed=matches_tool(case, calls))
+            elif case["expected_tool"] == "consultar_seguimientos":
+                response = await tracker.answer_followups(case["prompt"], case["fixture"]["followups"])
+                if not response.get("has_response"):
+                    raise RuntimeError("Gemini no devolvió contenido para evaluar.")
+                text = response["response"]
+                item["response"] = text
+                try:
+                    args = parse_tracking_answer(text)
+                except (ValueError, TypeError):
+                    item.update(passed=False, detail="La respuesta no contiene el JSON solicitado.")
+                else:
+                    calls = [{"name": "consultar_seguimientos", "args": args}]
+                    item.update(selected_calls=calls, selected_tools=[c["name"] for c in calls], passed=matches_tool(case, calls))
+            else:
+                fixture = case["fixture"]
+                try:
+                    decision = await tracker.interpret_status_action(case["prompt"], **fixture)
+                except ValueError:
+                    item.update(passed=False, detail="Gemini devolvió una acción inválida.")
+                else:
+                    args = {"status": decision["status"]}
+                    calls = [{"name": "interpretar_cambio_estado", "args": args}]
+                    item.update(selected_calls=calls, selected_tools=[c["name"] for c in calls],
+                                passed=matches_tool(case, calls))
+            if item["detail"] == "Pendiente de evaluación.":
+                item["detail"] = "Coincide la intención y sus argumentos." if item["passed"] else "La interpretación o los valores devueltos no coinciden con lo esperado."
+        except Exception as exc:
+            category, detail = provider_error(exc)
+            logging.getLogger(__name__).warning("Evaluación Gemini: caso=%s categoría=%s tipo=%s", case["id"], category, type(exc).__name__)
+            item.update(error_category=category, detail=detail)
+            blocked = True
+        results.append(item)
+    return response_payload(request.analysis_id, agent.model, results)
 
 @router.post("/chat", response_model=AgentChatResponse)
 async def chat_with_agent(
@@ -700,7 +620,8 @@ async def chat_with_agent(
 
         agent = get_inventory_agent()
 
-        result = agent.chat(
+        result = await asyncio.to_thread(
+            agent.chat,
             message=request.message,
             analysis_context=analysis_context,
             history=[entry.model_dump() for entry in request.history],

@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Brain, Loader2, RefreshCw, Download, AlertTriangle, Boxes } from 'lucide-react'
 
 import { mlService, agentService } from '../services/api'
+import { mergeCase, withCases } from '../services/agentEvaluation.js'
 
 const formatDate = (value) => {
   if (!value) return '-'
@@ -901,7 +902,7 @@ function AgentEvaluationCard({ result, loading, error, onRun }) {
         <div>
           <h3 className="font-semibold text-slate-800 mb-1 flex items-center gap-2">
             <Brain className="w-4 h-4 text-azure-500" />
-            Evaluación del agente de IA
+            Evaluación de herramientas del Analista de inventario
           </h3>
           <p className="text-xs text-slate-500">
             Verificación reproducible de las herramientas controladas del agente
@@ -973,17 +974,18 @@ function AgentEvaluationCard({ result, loading, error, onRun }) {
 }
 
 
-function AgentLanguageEvaluationCard({ result, loading, error, onRun }) {
+function AgentLanguageEvaluationCard({ result, loading, error, onRun, onCancel }) {
   const summary = result?.summary || {}
   const cases = result?.cases || []
-
-  const statusBadge = (value) => (
-    value == null
-      ? <span className="inline-flex rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">No evaluado</span>
-      : value
+  const agentNames = { inventario: 'Analista de inventario', seguimiento: 'Gestor de reposición' }
+  const statusBadge = (item) => (
+    item.passed == null
+      ? <span className="inline-flex rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">{item.error_category ? 'No evaluado' : 'Pendiente'}</span>
+      : item.passed
         ? <span className="inline-flex rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">Cumple</span>
         : <span className="inline-flex rounded-full bg-red-50 px-2 py-1 text-xs font-semibold text-red-700">No cumple</span>
   )
+  const argsText = (args) => args && Object.keys(args).length ? JSON.stringify(args) : ''
 
   return (
     <div className="card p-5">
@@ -993,77 +995,71 @@ function AgentLanguageEvaluationCard({ result, loading, error, onRun }) {
             <Brain className="w-4 h-4 text-azure-500" />
             Evaluación de interpretación con IA
           </h3>
-          <p className="text-xs text-slate-500">
-            Evalúa bajo demanda si Gemini interpreta consultas predefinidas en lenguaje natural
-            y selecciona la herramienta controlada esperada. Esta prueba consume Gemini y no modifica el inventario.
+          <p className="text-xs text-slate-500 max-w-2xl">
+            Analista de inventario: selección de herramientas y argumentos. Gestor de reposición:
+            interpretación de intenciones y consultas sobre datos de prueba. Usa Gemini bajo demanda; no modifica inventario.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onRun}
-          disabled={loading}
-          className="btn-secondary flex items-center gap-2"
-        >
-          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Brain className="w-4 h-4" />}
-          {result ? 'Reevaluar interpretación' : 'Evaluar interpretación con IA'}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => onRun(false)} disabled={loading} className="btn-secondary flex items-center gap-2">
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Brain className="w-4 h-4" />}
+            {result ? 'Reevaluar todos' : 'Evaluar interpretación con IA'}
+          </button>
+          {result && !loading && summary.not_evaluated > 0 && (
+            <button type="button" onClick={() => onRun(true)} className="btn-secondary">Continuar pendientes</button>
+          )}
+          {loading && <button type="button" onClick={onCancel} className="btn-secondary">Detener</button>}
+        </div>
       </div>
-
-      {error && (
-        <div className="mt-4 rounded-xl border border-red-200 bg-red-50/40 p-4 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-
-      {!result && !error && (
-        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/30 p-4 text-sm text-slate-600">
-          La evaluación no se ejecuta automáticamente para evitar consumo innecesario de la cuota de Gemini.
-        </div>
-      )}
-
+      {error && <div role="alert" className="mt-4 rounded-xl border border-amber-200 bg-amber-50/40 p-4 text-sm text-slate-700">{error}</div>}
+      {!result && !error && <p className="mt-4 text-sm text-slate-500">La prueba no se ejecuta automáticamente. Cada caso enviado consume una solicitud de Gemini.</p>}
       {result && (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4">
+          <p className="mt-4 text-xs text-slate-500">Modelo: {result.model || 'No informado'} · Protocolo {result.protocol_version || '1.0'} · {summary.evaluated_cases || 0} de {summary.total_cases || 0} casos ejecutados{loading ? ' (en ejecución)' : ''}.</p>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-3">
             {[
-              ['Cumplimiento de selección', summary.compliance_pct != null ? `${summary.compliance_pct} %` : '-'],
-              ['Casos evaluados', summary.evaluated_cases ?? summary.total_cases ?? '-'],
-              ['Cumplen', summary.passed ?? '-'],
-              ['No cumplen', summary.failed ?? '-'],
+              ['Cumplimiento', summary.compliance_pct != null ? `${summary.compliance_pct} %` : '—'],
+              ['Casos ejecutados', `${summary.evaluated_cases ?? 0} / ${summary.total_cases ?? 0}`],
+              ['Cumplen', summary.passed ?? 0], ['No cumplen', summary.failed ?? 0],
               ['No evaluados', summary.not_evaluated ?? 0],
             ].map(([label, value]) => (
               <div key={label} className="rounded-xl border border-slate-200 p-3">
-                <p className="text-xs text-slate-400">{label}</p>
-                <p className="text-lg font-bold text-slate-800">{value}</p>
+                <p className="text-xs text-slate-400">{label}</p><p className="text-lg font-bold text-slate-800">{value}</p>
               </div>
             ))}
           </div>
-
-          <div className="overflow-x-auto mt-4">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-xs text-slate-500">
-                  <th className="py-2 pr-3">Caso</th>
-                  <th className="pr-3">Herramienta esperada</th>
-                  <th className="pr-3">Herramienta seleccionada</th>
-                  <th className="pr-3">Resultado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {cases.map((item) => (
-                  <tr key={item.id} className="border-b border-slate-100 align-top">
-                    <td className="py-3 pr-3 font-medium text-slate-700">{item.name}</td>
-                    <td className="py-3 pr-3 text-slate-500">{item.expected_tool || '-'}</td>
-                    <td className="py-3 pr-3 text-slate-500">
-                      {item.passed == null ? 'No evaluado' : item.selected_tools?.length ? item.selected_tools.join(', ') : 'Ninguna'}
-                    </td>
-                    <td className="py-3 pr-3">{statusBadge(item.passed)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <p className="mt-4 text-xs text-slate-400">{result.note}</p>
+          {summary.not_evaluated > 0 && <p className="mt-2 text-xs text-amber-700">Resultado parcial: el porcentaje solo considera casos ejecutados. No equivale al cumplimiento del protocolo completo.</p>}
+          {Object.entries(agentNames).map(([agent, name]) => {
+            const group = cases.filter(item => item.agent === agent)
+            const stats = result.by_agent?.[agent] || {}
+            if (!group.length) return null
+            return (
+              <section key={agent} className="mt-6">
+                <h4 className="font-semibold text-sm text-slate-800">{name}</h4>
+                <p className="text-xs text-slate-500 mt-1">{stats.evaluated_cases ?? 0}/{stats.total_cases ?? group.length} ejecutados · {stats.compliance_pct == null ? 'Sin resultado' : `${stats.compliance_pct} % de cumplimiento`}</p>
+                <div className="overflow-x-auto mt-3">
+                  <table className="w-full text-sm">
+                    <thead><tr className="border-b text-left text-xs text-slate-500"><th className="py-2 pr-3">Caso y consulta</th><th className="pr-3">Resultado esperado</th><th className="pr-3">Resultado obtenido</th><th>Estado</th></tr></thead>
+                    <tbody>
+                      {group.map(item => (
+                        <tr key={item.id} className="border-b border-slate-100 align-top">
+                          <td className="py-3 pr-3 text-slate-700"><p className="font-medium">{item.name}</p><p className="text-xs text-slate-500 mt-1">{item.prompt}</p></td>
+                          <td className="py-3 pr-3 text-slate-500 break-all"><p>{item.expected_tool || '—'}</p><p className="text-xs">{argsText(item.expected_args)}</p></td>
+                          <td className="py-3 pr-3 text-slate-500 break-all">
+                            {item.selected_calls?.length ? item.selected_calls.map((call, idx) => <div key={idx}><p>{call.name}</p><p className="text-xs">{argsText(call.args)}</p></div>) : <p>{item.passed == null ? 'Sin ejecución' : 'Ninguna selección válida'}</p>}
+                            {item.response && <p className="text-xs mt-1 whitespace-pre-wrap break-words">Respuesta: {item.response}</p>}
+                            <p className="text-xs mt-1 text-slate-500">{item.detail}</p>
+                          </td>
+                          <td className="py-3 pr-3">{statusBadge(item)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            )
+          })}
+          <p className="mt-4 text-xs text-slate-500">{result.note} Exporta la evidencia JSON antes de recargar la página; los resultados de IA se mantienen en esta vista.</p>
         </>
       )}
     </div>
@@ -1082,8 +1078,12 @@ export default function ExperimentalEvaluationPage() {
   const [agentLanguageEvaluation, setAgentLanguageEvaluation] = useState(null)
   const [agentLanguageEvaluationLoading, setAgentLanguageEvaluationLoading] = useState(false)
   const [agentLanguageEvaluationError, setAgentLanguageEvaluationError] = useState(null)
+  const languageAbortRef = useRef(null)
 
   const loadLatestExperiment = useCallback(async (requestedId = null) => {
+    languageAbortRef.current?.abort()
+    languageAbortRef.current = null
+    setAgentLanguageEvaluationLoading(false)
     setLoading(true)
     setError(null)
     setAgentEvaluation(null)
@@ -1149,26 +1149,68 @@ export default function ExperimentalEvaluationPage() {
     }
   }, [metadata?.id])
 
-  const runAgentLanguageEvaluation = useCallback(async () => {
-    if (!metadata?.id) return
-
+  const runAgentLanguageEvaluation = useCallback(async (resume = false) => {
+    if (!metadata?.id || languageAbortRef.current) return
+    const controller = new AbortController()
+    languageAbortRef.current = controller
     setAgentLanguageEvaluationLoading(true)
     setAgentLanguageEvaluationError(null)
-
     try {
-      const response = await agentService.evaluateLanguage(metadata.id)
-      setAgentLanguageEvaluation(response.data)
+      let current = resume && agentLanguageEvaluation?.analysis_id === String(metadata.id)
+        ? agentLanguageEvaluation : null
+      if (!current) {
+        setAgentLanguageEvaluation(null)
+        const { data } = await agentService.evaluateLanguage(metadata.id, { listOnly: true, signal: controller.signal })
+        if (controller.signal.aborted) return
+        if (!Array.isArray(data.cases) || data.protocol_version !== '2.0') {
+          throw new Error('El backend aún no tiene el protocolo actualizado de evaluación.')
+        }
+        current = withCases(data, data.cases)
+        setAgentLanguageEvaluation(current)
+      }
+      const pending = current.cases.filter(item => item.passed == null)
+      for (const item of pending) {
+        if (controller.signal.aborted) break
+        try {
+          const { data } = await agentService.evaluateLanguage(metadata.id, { caseId: item.id, signal: controller.signal })
+          if (controller.signal.aborted) break
+          const actual = data.cases?.find(c => c.id === item.id)
+          if (String(data.analysis_id) !== String(metadata.id) || data.model !== current.model || !actual) {
+            throw new Error('Cambió el modelo o análisis de la evaluación. Ejecuta una nueva evaluación completa.')
+          }
+          current = mergeCase({ ...current, evaluated_at: data.evaluated_at }, { ...actual, evaluated_at: data.evaluated_at })
+          setAgentLanguageEvaluation(current)
+          if (actual.error_category) {
+            setAgentLanguageEvaluationError(`${actual.detail} Puedes continuar los pendientes cuando se resuelva el problema.`)
+            break
+          }
+        } catch (err) {
+          if (controller.signal.aborted) break
+          const detail = err?.response?.data?.detail
+          const message = typeof detail === 'string' ? detail : err?.message || 'Error de comunicación con el backend.'
+          current = mergeCase(current, { ...item, passed: null, error_category: 'request_failed', detail: message })
+          setAgentLanguageEvaluation(current)
+          setAgentLanguageEvaluationError(`Evaluación detenida: ${message}`)
+          break
+        }
+      }
     } catch (err) {
-      console.error(err)
-      setAgentLanguageEvaluationError(
-        err?.response?.data?.detail ||
-        err?.message ||
-        'No se pudo evaluar la interpretación con IA.'
-      )
+      if (!controller.signal.aborted) {
+        const detail = err?.response?.data?.detail
+        setAgentLanguageEvaluationError(typeof detail === 'string' ? detail : err?.message || 'No se pudo iniciar la evaluación.')
+      }
     } finally {
-      setAgentLanguageEvaluationLoading(false)
+      if (languageAbortRef.current === controller) {
+        languageAbortRef.current = null
+        setAgentLanguageEvaluationLoading(false)
+      }
     }
-  }, [metadata?.id])
+  }, [metadata?.id, agentLanguageEvaluation])
+
+  const cancelLanguageEvaluation = useCallback(() => {
+    languageAbortRef.current?.abort()
+    setAgentLanguageEvaluationError('Evaluación detenida. Se conservaron los resultados recibidos; la consulta en curso puede haber consumido cuota.')
+  }, [])
 
   // Exporta exclusivamente los resultados ya guardados o evaluados;
   // no reentrena XGBoost, no llama a Gemini y no modifica el inventario.
@@ -1211,6 +1253,10 @@ export default function ExperimentalEvaluationPage() {
 
   useEffect(() => {
     loadLatestExperiment()
+    return () => {
+      languageAbortRef.current?.abort()
+      languageAbortRef.current = null
+    }
   }, [loadLatestExperiment])
 
   if (loading) {
@@ -1237,7 +1283,7 @@ export default function ExperimentalEvaluationPage() {
           </h1>
           <p className="text-sm text-slate-500 mt-1">
             Validación temporal, evaluación predictiva, comparación con baseline,
-            ablación, política de reabastecimiento y agente de IA.
+            ablación, política de reabastecimiento y agentes de IA.
           </p>
         </div>
 
@@ -1256,6 +1302,7 @@ export default function ExperimentalEvaluationPage() {
         <button
           type="button"
           onClick={() => loadLatestExperiment(metadata?.id)}
+          disabled={agentLanguageEvaluationLoading || agentEvaluationLoading}
           className="btn-secondary flex items-center gap-2"
         >
           <RefreshCw className="w-4 h-4" />
@@ -1288,7 +1335,7 @@ export default function ExperimentalEvaluationPage() {
             className="w-full rounded-lg border border-slate-300 bg-white p-2 text-sm text-slate-800"
             value={metadata?.id || ''}
             onChange={(event) => loadLatestExperiment(event.target.value)}
-            disabled={loading}
+            disabled={loading || agentLanguageEvaluationLoading || agentEvaluationLoading}
           >
             {availableAnalyses.map((item) => (
               <option key={item.id} value={item.id}>
@@ -1347,6 +1394,7 @@ export default function ExperimentalEvaluationPage() {
           loading={agentLanguageEvaluationLoading}
           error={agentLanguageEvaluationError}
           onRun={runAgentLanguageEvaluation}
+          onCancel={cancelLanguageEvaluation}
         />
       )}
     </div>
